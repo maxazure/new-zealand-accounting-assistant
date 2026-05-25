@@ -1,25 +1,27 @@
 ---
-name: kiwi-receipts
-description: "NZ bookkeeping and tax assistant for small businesses and sole traders. Initialize a local KiwiBooks workspace, capture receipts, income, bank statements, and bookkeeping notes, reconcile bank lines with records, generate monthly finance summaries, IRD-ready GST/IR3 XLSX reports, and Xero standard or precoded bank statement CSV exports. Use when: (1) user sends a receipt, invoice, bank statement, or bookkeeping note, (2) user asks about GST, income tax, monthly accounts, reconciliation, or tax returns, (3) user wants to export receipts, generate reports, or create Xero imports, (4) user mentions IRD, GST, IR3, Xero, precoded CSV, provisional tax, depreciation, income, expense, or bank matching."
+name: new-zealand-accounting-assistant
+description: "Free public, open-source New Zealand bookkeeping and tax-preparation assistant for small businesses and sole traders. Initialize a local KiwiBooks workspace, capture receipts, income, bank statements, and bookkeeping notes, reconcile bank lines with records, generate monthly finance summaries, IRD-ready GST/IR3 XLSX reports, and Xero standard or precoded bank statement CSV exports. This skill is not professional accounting or tax advice and must tell users to have a qualified New Zealand accountant review records and filings. Use when: (1) user sends a receipt, invoice, bank statement, or bookkeeping note, (2) user asks about GST, income tax, monthly accounts, reconciliation, or tax returns, (3) user wants to export receipts, generate reports, or create Xero imports, (4) user mentions New Zealand accounting, NZ accounting, IRD, GST, IR3, Xero, precoded CSV, provisional tax, depreciation, income, expense, or bank matching."
 metadata:
   {
     "openclaw":
       {
         "emoji": "🧾",
-        "triggers": ["receipt", "invoice", "bank statement", "reconcile", "bookkeeping", "gst", "ird", "tax", "ir3", "xero", "precoded", "depreciation", "provisional", "income", "expense", "asset"],
+        "triggers": ["new zealand accounting", "nz accounting", "accounting assistant", "receipt", "invoice", "bank statement", "reconcile", "bookkeeping", "gst", "ird", "tax", "ir3", "xero", "precoded", "depreciation", "provisional", "income", "expense", "asset"],
       },
   }
 ---
 
-# Kiwi Receipts
+# New Zealand Accounting Assistant
 
-NZ bookkeeping and tax assistant for small businesses, sole traders, builders, and contractors. Capture receipts and income, import bank statement data, match source records to bank transactions, summarize monthly finances, calculate GST/IR3/provisional tax/depreciation, and export XLSX plus Xero standard or precoded CSV files.
+Free, public, open-source NZ bookkeeping and tax-preparation assistant for small businesses, sole traders, builders, and contractors. Capture receipts and income, import bank statement data, match source records to bank transactions, summarize monthly finances, calculate GST/IR3/provisional tax/depreciation, and export XLSX plus Xero standard or precoded CSV files.
 
 This is a personal-use skill -- each user runs their own instance. No multi-tenant, no login.
 
+Public-service disclaimer: this skill is not for sale, is intended to remain free and public, and must not be described as a paid accounting product. It does not replace a registered accountant, tax agent, or professional tax advice. It prepares records and draft outputs only; tell users to have a qualified New Zealand accountant review records and filings before submission or reliance.
+
 ## Core Rule
 
-Do not start bookkeeping work until the workspace readiness check has passed. The first useful reply after setup must explain the workflow in plain language: collect income, expenses, and bank statements; match them together; review uncertain matches; then generate monthly summaries, IRD figures, and Xero import files.
+Do not start bookkeeping work until the workspace readiness check has passed. The first useful reply after setup must explain the workflow in plain language: collect income, expenses, and bank statements; match them together; review uncertain matches; then generate monthly summaries, IRD figures, and Xero import files. The first setup reply and every report/export reply must include a concise disclaimer that this is record preparation, not professional accounting or tax advice.
 
 When changing or relying on ledger storage, read `references/ledger-file-format.md` first.
 When changing or relying on Xero import behavior, IRD filing behavior, or New Zealand record-keeping rules, read `references/xero-import-and-ird-filing.md` first.
@@ -195,7 +197,7 @@ If legacy files exist in `~/.openclaw/data/kiwi-receipts/`, offer to copy them i
 After setup is ready, explain:
 
 ```text
-Kiwi Receipts works in four steps:
+New Zealand Accounting Assistant works in four steps:
 1. Collect source records: receipts, income/invoices, bank statements, and notes.
 2. Normalize them into a local ledger under your business folder.
 3. Match bank statement lines to receipts and income by date, amount, merchant/client, and references.
@@ -429,7 +431,7 @@ Run bank matching, update monthly `matches.json`, and show accepted, suggested, 
 
 ### "help"
 ```
-Kiwi Receipts -- Commands:
+New Zealand Accounting Assistant -- Commands:
 
 SETUP:
   "setup"                    Configure or validate bookkeeping workspace
@@ -850,6 +852,6 @@ Per the Income Tax Act 2007 and Tax Administration Act 1994:
 47. Keep all records for **minimum 7 years** (same as GST)
 
 ### Disclaimers
-48. **Always state**: "This is a calculation tool, not tax advice. Verify with a qualified accountant before filing."
+48. **Always state**: "This is record preparation, not professional accounting or tax advice. Have a qualified New Zealand accountant review records and filings before submission."
 49. **Do not recommend** business structure changes (sole trader vs company vs trust)
 50. **Do not advise** on tax minimization strategies beyond standard deductions

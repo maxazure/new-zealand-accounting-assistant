@@ -1,17 +1,19 @@
-# Kiwi Receipts
+# New Zealand Accounting Assistant
 
-Kiwi Receipts is an AI bookkeeping skill for New Zealand small businesses. It helps owners collect receipts, record income, import bank statements, match transactions, and prepare the monthly/annual numbers needed for Xero, IRD, or an accountant.
+New Zealand Accounting Assistant is a free, public, open-source AI bookkeeping skill for New Zealand small businesses. It helps owners collect receipts, record income, import bank statements, match transactions, and prepare the monthly/annual numbers needed for Xero, IRD, or an accountant.
 
 It is designed to be run with **Codex** or **Claude Code**. It can also be installed as an **OpenClaw** skill.
 
-This is not a replacement for an accountant. It is a practical record-preparation assistant: it keeps the evidence together, highlights anything unclear, and produces cleaner files for review and filing.
+**Important disclaimer:** this service is not a replacement for a registered accountant, tax agent, or professional tax advice. It prepares records and draft outputs only. Please have a qualified New Zealand accountant review your records and filings before submitting anything to IRD or relying on the results.
+
+This project is not for sale and should not be presented as a paid accounting product. It is intended to remain free and public, helping small businesses keep clearer records, reduce missing paperwork, and prepare better review packs for their accountant.
 
 ## What It Does
 
 For a business owner, the workflow is simple:
 
 1. Send receipt photos, supplier invoices, income notes, or bank statement files.
-2. Kiwi Receipts stores them in a local business folder.
+2. New Zealand Accounting Assistant stores them in a local business folder.
 3. It reads the details: dates, amounts, suppliers, customers, descriptions, GST shown, and categories.
 4. It matches receipts and income records against bank statement lines.
 5. It shows what is matched, what is missing, and what needs review.
@@ -21,7 +23,7 @@ The goal is to reduce the usual end-of-month mess: missing receipts, unclear ban
 
 ## What It Can Produce
 
-Kiwi Receipts can help generate:
+New Zealand Accounting Assistant can help generate:
 
 - Monthly income and expense summaries
 - Lists of unmatched or unclear bank transactions
@@ -33,7 +35,7 @@ Kiwi Receipts can help generate:
 - Asset and depreciation schedules
 - Accountant review packs
 
-If the business is **not registered for GST**, Kiwi Receipts records GST shown on receipts as evidence only. It does not claim GST, does not generate GST return figures, and uses `No GST` or the user's equivalent Xero tax rate for exports.
+If the business is **not registered for GST**, New Zealand Accounting Assistant records GST shown on receipts as evidence only. It does not claim GST, does not generate GST return figures, and uses `No GST` or the user's equivalent Xero tax rate for exports.
 
 ## Recommended Use
 
@@ -65,7 +67,7 @@ OpenClaw is still supported. The skill can run in an OpenClaw setup where users 
 
 ## How Accuracy Works
 
-Kiwi Receipts is built around evidence, not guessing.
+New Zealand Accounting Assistant is built around evidence, not guessing.
 
 - Bank statements are treated as the source of truth for money movement.
 - Receipt photos, invoices, and notes explain the bank lines.
@@ -77,7 +79,7 @@ Kiwi Receipts is built around evidence, not guessing.
 
 ## First Setup
 
-On first use, Kiwi Receipts creates a local bookkeeping workspace. The default location is:
+On first use, New Zealand Accounting Assistant creates a local bookkeeping workspace. The default location is:
 
 ```text
 ~/KiwiBooks
@@ -170,7 +172,7 @@ Date,Amount,Payee,Description,Reference,AccountCode,TaxType,ContactName
 
 ### GST-Registered Businesses
 
-If the business is GST registered, Kiwi Receipts can prepare GST return worksheets.
+If the business is GST registered, New Zealand Accounting Assistant can prepare GST return worksheets.
 
 ```text
 You: report
@@ -234,10 +236,16 @@ CSV and Xero precoded CSV exports can run without `openpyxl`.
 
 ### OpenClaw
 
-Install through ClawHub if available:
+After it is published under the new public name, install through ClawHub with:
 
 ```bash
 npm i -g clawhub
+clawhub install new-zealand-accounting-assistant
+```
+
+During the rename transition, the older published slug may still be available:
+
+```bash
 clawhub install kiwi-receipts
 ```
 
@@ -361,7 +369,9 @@ All accounting data is stored locally by default:
         └── archive/
 ```
 
-Kiwi Receipts uses JSON, but not one large file. Monthly records are split into `ledger/periods/YYYY-MM/`; annual tax records are split into `ledger/tax-years/YYYY-YYYY/`; long-lived reference data goes into `ledger/registers/`.
+Some compatibility paths still use the older `kiwi-receipts` or `KiwiBooks` names so existing users do not lose or duplicate local records during the rename.
+
+New Zealand Accounting Assistant uses JSON, but not one large file. Monthly records are split into `ledger/periods/YYYY-MM/`; annual tax records are split into `ledger/tax-years/YYYY-YYYY/`; long-lived reference data goes into `ledger/registers/`.
 
 See [`ledger-file-format.md`](references/ledger-file-format.md) for field definitions, including `gst_registered`, `gst_claimable`, `claim_status`, and non-GST handling.
 

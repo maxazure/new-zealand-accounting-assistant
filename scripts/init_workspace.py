@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Initialize a local Kiwi Receipts bookkeeping workspace."""
+"""Initialize a local New Zealand Accounting Assistant bookkeeping workspace."""
 
 import argparse
 import json
@@ -107,7 +107,7 @@ def write_json_if_missing(path: Path, data) -> bool:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Initialize a Kiwi Receipts workspace")
+    parser = argparse.ArgumentParser(description="Initialize a New Zealand Accounting Assistant workspace")
     parser.add_argument("--root", default=DEFAULT_ROOT, help="Bookkeeping root directory")
     parser.add_argument("--business-name", required=True, help="Business name")
     parser.add_argument("--slug", default=None, help="Business slug")
