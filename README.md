@@ -8,6 +8,22 @@ It is designed to be run with **Codex** or **Claude Code**. It can also be insta
 
 This project is not for sale and should not be presented as a paid accounting product. It is intended to remain free and public, helping small businesses keep clearer records, reduce missing paperwork, and prepare better review packs for their accountant.
 
+## Tax Law Baseline
+
+This project follows New Zealand tax law and IRD guidance as checked on **25 May 2026**. Do not assume the rules are still current after this date.
+
+Current baseline sources:
+
+- [Goods and Services Tax Act 1985](https://www.legislation.govt.nz/act/public/1985/0141/latest/versions.aspx), NZ Legislation version **as at 13 November 2025**
+- [Income Tax Act 2007](https://www.legislation.govt.nz/act/public/2007/0097/latest/versions.aspx), NZ Legislation version **as at 1 January 2026**
+- [Tax Administration Act 1994](https://legislation.govt.nz/act/public/1994/0166/latest/versions.aspx), NZ Legislation version **as at 18 December 2025**
+- [IRD GST guide IR375](https://www.ird.govt.nz/-/media/project/ir/home/documents/forms-and-guides/ir300---ir399/ir375/ir375.pdf), **March 2026**
+- [IRD Individual income tax return guide IR3G](https://www.ird.govt.nz/income-tax/income-tax-for-individuals/what-happens-at-the-end-of-the-tax-year/individual-income-tax-return---ir3/complete-my-individual-income-tax-return---ir3), **March 2026**, with IR3 return forms for **April 2026**
+- IRD depreciation guidance: [IR260 Depreciation guide](https://www.ird.govt.nz/income-tax/income-tax-for-businesses-and-organisations/types-of-business-expenses/depreciation), **2024**, and [IR265 General depreciation rates](https://www.ird.govt.nz/income-tax/income-tax-for-businesses-and-organisations/types-of-business-expenses/depreciation), **March 2026**
+- [IRD Provisional tax guide IR289](https://www.ird.govt.nz/income-tax/provisional-tax/provisional-tax-options/estimation-option), **April 2025**
+
+Before publishing a new release, generating filing-ready reports, or advising users on GST/IRD/Xero outputs, re-check these official sources and update this section if any version or rule has changed.
+
 ## What It Does
 
 For a business owner, the workflow is simple:
