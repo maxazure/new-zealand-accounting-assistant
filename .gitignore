@@ -2,6 +2,9 @@
 *.json
 !package.json
 
+# Local agent instructions (private workspace policy)
+AGENTS.md
+
 # Python
 __pycache__/
 *.pyc

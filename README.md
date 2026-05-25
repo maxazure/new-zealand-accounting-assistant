@@ -1,240 +1,303 @@
 # Kiwi Receipts
 
-An [OpenClaw](https://github.com/nichochar/openclaw) skill that serves as a personal NZ tax assistant for sole trader builders and contractors. Processes receipt photos, tracks sales income, calculates GST, income tax, provisional tax, and asset depreciation. Generates IRD-ready XLSX reports and Xero-importable CSV.
+Kiwi Receipts is an AI bookkeeping skill for New Zealand small businesses. It helps owners collect receipts, record income, import bank statements, match transactions, and prepare the monthly/annual numbers needed for Xero, IRD, or an accountant.
+
+It is designed to be run with **Codex** or **Claude Code**. It can also be installed as an **OpenClaw** skill.
+
+This is not a replacement for an accountant. It is a practical record-preparation assistant: it keeps the evidence together, highlights anything unclear, and produces cleaner files for review and filing.
+
+## What It Does
+
+For a business owner, the workflow is simple:
+
+1. Send receipt photos, supplier invoices, income notes, or bank statement files.
+2. Kiwi Receipts stores them in a local business folder.
+3. It reads the details: dates, amounts, suppliers, customers, descriptions, GST shown, and categories.
+4. It matches receipts and income records against bank statement lines.
+5. It shows what is matched, what is missing, and what needs review.
+6. It creates useful monthly and annual outputs.
+
+The goal is to reduce the usual end-of-month mess: missing receipts, unclear bank lines, uncoded transactions, and manual spreadsheet work.
+
+## What It Can Produce
+
+Kiwi Receipts can help generate:
+
+- Monthly income and expense summaries
+- Lists of unmatched or unclear bank transactions
+- Receipt and invoice ledgers
+- Xero bank statement CSV exports
+- Xero precoded CSV exports with account code, tax type, and contact name
+- GST return worksheets for GST-registered businesses
+- Income tax / IR3 workpapers
+- Asset and depreciation schedules
+- Accountant review packs
+
+If the business is **not registered for GST**, Kiwi Receipts records GST shown on receipts as evidence only. It does not claim GST, does not generate GST return figures, and uses `No GST` or the user's equivalent Xero tax rate for exports.
+
+## Recommended Use
+
+### Codex or Claude Code
+
+Recommended for most users who are comfortable keeping business records on their own computer.
+
+Typical monthly prompt:
+
+```text
+Set up bookkeeping for my business, then import this month's bank statement and receipts. Match everything, show what needs review, and prepare a Xero export.
+```
+
+Typical GST-registered prompt:
+
+```text
+Reconcile March and April, then prepare the GST return worksheet and Xero precoded CSV.
+```
+
+Typical non-GST-registered prompt:
+
+```text
+Reconcile March, keep GST as non-claimable evidence, and prepare the monthly profit summary plus Xero No GST export.
+```
+
+### OpenClaw
+
+OpenClaw is still supported. The skill can run in an OpenClaw setup where users send receipts and commands through an assistant interface.
+
+## How Accuracy Works
+
+Kiwi Receipts is built around evidence, not guessing.
+
+- Bank statements are treated as the source of truth for money movement.
+- Receipt photos, invoices, and notes explain the bank lines.
+- Original files are preserved in an `inbox/` folder.
+- Normalized records are stored in monthly JSON ledger files.
+- Ambiguous matches stay visible until a person confirms them.
+- Xero account codes and tax rate names must come from the business, accountant, or Xero configuration. The skill should not invent them.
+- GST handling depends on whether the business is GST registered.
+
+## First Setup
+
+On first use, Kiwi Receipts creates a local bookkeeping workspace. The default location is:
+
+```text
+~/KiwiBooks
+```
+
+Each business gets its own folder:
+
+```text
+~/KiwiBooks/businesses/{business-slug}/
+```
+
+During setup it asks for practical business details:
+
+- Business name
+- Whether the business is GST registered
+- GST number and GST filing settings, if registered
+- Balance date
+- Vehicle, phone, or home-office business-use percentages if relevant
+- Xero mapping details if Xero precoded exports are needed
+
+Example:
+
+```text
+You: setup
+Assistant: I will use ~/KiwiBooks as the bookkeeping root unless you want another folder.
+Assistant: What is your business name?
+You: My Construction Ltd
+Assistant: Is the business registered for GST?
+You: no
+Assistant: Vehicle business use percentage? (default 80)
+You: 80
+Assistant: Workspace ready at ~/KiwiBooks/businesses/my-construction-ltd.
+           GST mode: not registered, so GST observed on receipts is stored as evidence but not claimed.
+```
+
+## Everyday Use
+
+### Capture Receipts
+
+```text
+You: [photo of Bunnings receipt]
+Assistant: Receipt captured:
+           Bunnings Warehouse
+           2026-03-19
+           $174.00
+           Category: materials
+           GST observed: $22.70, not claimable because the business is not GST registered
+
+           Reply to save, or correct any details.
+```
+
+### Record Income
+
+```text
+You: income 9775 Bathroom renovation - 42 Rimu St, ABC Homes
+Assistant: Income recorded:
+           Client: ABC Homes
+           Amount: $9,775.00
+           GST: not charged
+           Invoice wording: Not GST registered. No GST has been charged.
+```
+
+### Reconcile a Month
+
+```text
+You: reconcile 2026-03
+Assistant: Monthly Summary: March 2026
+           Bank income: $29,670.00
+           Bank expenses: $8,420.50
+           Matched receipts: 23 / 25
+           Matched income records: 8 / 8
+           Unmatched bank lines: 3
+           Needs review: 2
+```
+
+### Export to Xero
+
+```text
+You: xero export
+Assistant: Xero CSV exported: 35 transactions.
+```
+
+For Xero precoded imports, fill `mappings/xero-account-map.json` first so the export can include the correct account codes and tax rates.
+
+```csv
+Date,Amount,Payee,Description,Reference,AccountCode,TaxType,ContactName
+15/03/2026,-174.00,Bunnings Warehouse,BUNNINGS EFTPOS,CARD123,310,No GST,Bunnings Warehouse
+17/03/2026,9775.00,ABC Homes Ltd,INV-2026-015,INV-2026-015,200,No GST,ABC Homes Ltd
+```
+
+### GST-Registered Businesses
+
+If the business is GST registered, Kiwi Receipts can prepare GST return worksheets.
+
+```text
+You: report
+Assistant: GST Report: Mar-Apr 2026
+           Total purchases: $8,420.50
+           Total sales: $29,670.00
+           GST to pay: $2,771.67
+           [Download XLSX]
+```
+
+The worksheet maps to IRD GST101A boxes such as sales/income, GST collected, purchases/expenses, GST credits, and GST to pay/refund. The normal direct-filing path is still to enter the figures in myIR unless a formal IRD Gateway integration is built.
+
+### End of Tax Year
+
+```text
+You: ir3
+Assistant: Annual Tax Summary: 2025-2026
+
+           Income:             $82,608.70
+           Less expenses:     -$49,500.00
+           Less depreciation:  -$6,246.50
+           Taxable income:     $26,862.20
+
+           Reply "export ir3" for the full XLSX report.
+```
 
 ## Features
 
-- **Receipt capture** -- snap a photo of any receipt, AI extracts merchant, date, items, GST
-- **Sales/income tracking** -- record invoices to auto-fill GST Box 5
-- **GST reports** -- XLSX with IRD GST101A pre-filled (both purchases and sales sides)
-- **IR3 annual income tax** -- calculates taxable income, applies NZ tax brackets, ACC levy
-- **Provisional tax** -- calculates instalments based on previous year RIT
-- **Asset depreciation** -- tracks assets, applies IRD DV/SL rates, generates schedules
-- **Xero CSV export** -- importable bank transaction format for Xero accounting
-- **NZ tax compliant** -- built against GST Act 1985, Income Tax Act 2007, IR265 depreciation rates
-- **Personal use** -- runs on your own OpenClaw instance, all data stays on your device
-- **7-year record keeping** -- JSON storage meets Section 75 requirements
+- Receipt photo capture and extraction
+- Income and invoice tracking
+- Bank statement import from CSV/XLSX/PDF-derived data
+- Bank reconciliation against receipts and income
+- Monthly financial summaries
+- GST-aware and non-GST workflows
+- IRD GST worksheet support for GST-registered businesses
+- IR3 / annual income tax workpapers
+- Provisional tax calculations
+- Asset and depreciation tracking
+- Xero standard CSV export
+- Xero precoded CSV export
+- Local record keeping with no telemetry from this skill
 
 ## Installation
 
-### Option A: ClawHub (recommended)
+### Recommended: Codex or Claude Code
+
+Clone or copy this repository into a local working folder and ask Codex or Claude Code to use the skill instructions in `SKILL.md`.
 
 ```bash
-# Install the ClawHub CLI if you haven't already
-npm i -g clawhub
-
-# Install the skill
-clawhub install kiwi-receipts
+git clone https://github.com/maxazure/kiwi-receipts.git
+cd kiwi-receipts
 ```
 
-### Option B: Git clone
-
-```bash
-git clone https://github.com/maxazure/kiwi-receipts.git ~/.openclaw/skills/kiwi-receipts
-```
-
-### Option C: Manual download
-
-Copy the repository into any supported skill directory:
-
-```bash
-# Workspace skills (highest priority)
-cp -r kiwi-receipts ~/.openclaw/workspace/skills/kiwi-receipts
-
-# Or managed skills directory
-cp -r kiwi-receipts ~/.openclaw/skills/kiwi-receipts
-```
-
-You can also register an extra skill directory in `~/.openclaw/openclaw.json`:
-
-```json
-{
-  "skills": {
-    "load": {
-      "extraDirs": ["/path/to/your/skills/folder"]
-    }
-  }
-}
-```
-
-### Python dependency
-
-The XLSX/CSV report generator requires `openpyxl`. Install it before first use:
+For XLSX report generation, install `openpyxl`:
 
 ```bash
 pip install openpyxl
 ```
 
-## How It Works
+CSV and Xero precoded CSV exports can run without `openpyxl`.
 
-### Daily: Capture receipts and income
+### OpenClaw
 
-Send a photo of your receipt to your OpenClaw bot (Telegram or WhatsApp):
+Install through ClawHub if available:
 
-```
-You: [photo of Bunnings receipt]
-Bot: Receipt captured:
-     Bunnings Warehouse
-     2026-03-19
-     $174.00 (GST: $22.70)
-     Timber 2x4 x10, Concrete Mix x5
-     Category: materials
-
-     Reply to save, or correct any details.
-You: save
-Bot: Saved. Period total: $1,527.37, 5 receipts.
+```bash
+npm i -g clawhub
+clawhub install kiwi-receipts
 ```
 
-Record sales when you invoice a client:
+Or install manually:
 
-```
-You: income 9775 Bathroom renovation - 42 Rimu St, ABC Homes
-Bot: Income recorded:
-     Client: ABC Homes
-     Description: Bathroom renovation - 42 Rimu St
-     Amount: $9,775.00 (GST: $1,274.35)
-     Date: 2026-03-19
-
-     Reply to save.
+```bash
+git clone https://github.com/maxazure/kiwi-receipts.git ~/.openclaw/skills/kiwi-receipts
 ```
 
-### Every two months: File GST
+You can also copy the repository into a workspace skill directory:
 
-NZ GST is filed every two months. Send `report` to generate the XLSX:
-
-```
-You: report
-Bot: GST Report: Mar-Apr 2026
-     Receipts: 23, Income entries: 8
-     Total purchases: $8,420.50
-     Total sales: $29,670.00
-     GST to pay: $2,773.70
-     [Download XLSX]
-```
-
-The GST101A sheet is fully auto-filled when you have both receipts and income data:
-
-| Box | Description | Value |
-|-----|-------------|-------|
-| 5 | Total sales (incl GST) | $29,670.00 (auto-filled from income) |
-| 10 | Total GST collected | $3,870.00 (auto-calculated) |
-| 11 | Total purchases (incl GST) | $8,420.50 (auto-filled from receipts) |
-| 12 | GST credit (Box 11 x 3/23) | $1,098.33 (auto-calculated) |
-| 15 | GST to pay | $2,771.67 (auto-calculated) |
-
-Log in to [myIR](https://www.ird.govt.nz/), copy the numbers, submit. Done.
-
-### End of tax year: IR3 income tax
-
-At the end of the tax year (31 March), generate your annual tax summary:
-
-```
-You: ir3
-Bot: Annual Tax Summary: 2025-2026
-
-     Income (excl GST):    $82,608.70
-     Less expenses:       -$49,500.00
-     Less depreciation:    -$6,246.50
-     Taxable income:       $26,862.20
-
-     Income tax:            $3,608.89
-     ACC levy:                $448.60
-     Less provisional tax: -$2,943.15
-     Tax to pay:            $1,114.34
-
-     Reply "export ir3" for the full XLSX report.
-```
-
-### Provisional tax
-
-If your previous year tax exceeded $5,000, the skill calculates your instalments:
-
-```
-You: provisional
-Bot: Provisional Tax 2026-2027:
-     Based on 2025-2026 RIT: $8,409.00
-     Uplift (x 1.05): $8,829.45
-     Per instalment: $2,943.15
-
-     1st: 28 August 2026
-     2nd: 15 January 2027
-     3rd: 7 May 2027
-```
-
-### Asset depreciation
-
-Track tools, vehicles, and equipment:
-
-```
-You: asset add DeWalt circular saw $899
-Bot: Asset recorded:
-     DeWalt circular saw
-     Cost: $899.00 (excl GST)
-     Category: Portable power tools
-     Depreciation: DV 40% (5 year life)
-     Year 1 claim: $359.60
-```
-
-### Xero export
-
-Generate a CSV importable into Xero:
-
-```
-You: xero export
-Bot: Xero CSV exported: 35 transactions (Mar-Apr 2026)
-     [Download CSV]
-```
-
-Import into Xero: Accounting > Bank Accounts > Import Statement.
-
-## NZ GST Filing Periods
-
-| Period | Due Date |
-|--------|----------|
-| Jan - Feb | 28 March |
-| Mar - Apr | 28 May |
-| May - Jun | 28 July |
-| Jul - Aug | 28 September |
-| Sep - Oct | 28 November |
-| Nov - Dec | 15 January |
-
-Special dates: periods ending 31 March are due 7 May. Periods ending 30 November are due 15 January.
-
-## First-Time Setup
-
-```
-You: setup
-Bot: What is your business name?
-You: My Construction Ltd
-Bot: What is your GST/IRD number?
-You: 12-345-678
-Bot: Vehicle business use percentage? (default 80)
-You: 80
-Bot: Phone business use percentage? (default 70)
-You: 70
-Bot: Saved.
+```bash
+cp -r kiwi-receipts ~/.openclaw/workspace/skills/kiwi-receipts
 ```
 
 ## Commands
+
+### Setup
+
+| Command | Description |
+|---------|-------------|
+| `setup` | Configure the business workspace |
+| `help` | Show available commands |
 
 ### Receipts
 
 | Command | Description |
 |---------|-------------|
 | Send photo | Capture a receipt |
-| `summary` | Current GST period overview |
-| `report` | Download GST report (XLSX) |
-| `report 2026-03` | Report for a specific period |
+| `summary` | Current period overview with bank match status |
 | `list` | Show recent receipts |
 | `delete last` | Remove last receipt |
+
+### Bank Statements
+
+| Command | Description |
+|---------|-------------|
+| `import bank statement` | Import and normalize a bank CSV/XLSX/PDF |
+| `reconcile` | Match current-period bank lines to receipts and income |
+| `reconcile 2026-03` | Reconcile one month |
+| `month 2026-03` | Monthly bank/source summary |
 
 ### Income
 
 | Command | Description |
 |---------|-------------|
-| `income 9775 description` | Record a sales invoice |
+| `income 9775 description` | Record sales income |
 | `income list` | Show recent income entries |
-| `income summary` | Current period income total |
+| `income summary` | Current-period income total |
+
+### Tax and Reports
+
+| Command | Description |
+|---------|-------------|
+| `report` | Generate a period report XLSX |
+| `report 2026-03` | Generate report for a specific period |
+| `ir3` or `tax return` | Annual income tax summary |
+| `export ir3` | Annual XLSX report |
+| `provisional` | Calculate provisional tax instalments |
+| `set last year tax 8409` | Set previous year residual income tax |
 
 ### Assets
 
@@ -245,93 +308,140 @@ Bot: Saved.
 | `asset dispose name $price` | Record asset disposal |
 | `depreciation` | Calculate this year's depreciation |
 
-### Tax
-
-| Command | Description |
-|---------|-------------|
-| `provisional` | Calculate provisional tax instalments |
-| `set last year tax 8409` | Set previous year residual income tax |
-| `ir3` or `tax return` | Annual income tax summary |
-| `export ir3` | Annual XLSX report with all sheets |
-
 ### Export
 
 | Command | Description |
 |---------|-------------|
-| `xero export` | Generate Xero-importable CSV |
+| `xero export` | Generate standard Xero bank statement CSV |
+| `xero precoded export` | Generate Xero precoded CSV with AccountCode, TaxType, ContactName |
 
-### Setup
+## Local Data Storage
 
-| Command | Description |
-|---------|-------------|
-| `setup` | Configure business details |
-| `help` | Show all commands |
+All accounting data is stored locally by default:
 
-## XLSX Report Sheets
+```text
+~/.openclaw/data/kiwi-receipts/
+└── config.json                         # Pointer to KiwiBooks root and active business
 
-The generated XLSX can contain up to 7 sheets:
-
-1. **GST Summary** -- business info, period totals
-2. **All Receipts** -- every receipt with date, merchant, category, items, amounts
-3. **By Category** -- subtotals by expense category
-4. **IRD GST101A** -- official box numbers pre-filled for myIR
-5. **Income** -- sales/invoice records (when income data exists)
-6. **Depreciation** -- asset depreciation schedule (when assets exist)
-7. **IR3 Annual Tax** -- full income tax calculation with bracket breakdown (annual reports)
-
-## Legal Compliance
-
-This skill is built with reference to:
-
-- **Goods and Services Tax Act 1985** (NZ) -- Sections 2, 8, 15, 16, 19F, 20, 51, 75
-- **Income Tax Act 2007** (NZ) -- Schedule 1 Part A (tax rates), Subpart EE (depreciation), Part RC (provisional tax), Section DA 1 (deductions)
-- **Tax Administration Act 1994** -- record keeping, filing deadlines
-- **Taxation (Annual Rates for 2021-22, GST, and Remedial Matters) Act 2022** -- TSI framework (effective 1 April 2023)
-- **IRD GST101A form** (2023 revision)
-- **IRD General Depreciation Rates IR265** (August 2024)
-
-See the `references/` directory for full compliance documentation:
-- [`nz-gst-guide.md`](references/nz-gst-guide.md) -- GST Act citations, TSI thresholds, GST101A box reference
-- [`nz-income-tax-guide.md`](references/nz-income-tax-guide.md) -- tax brackets, IR3 structure, provisional tax, deductions
-- [`nz-depreciation-rates.md`](references/nz-depreciation-rates.md) -- IRD depreciation rates for builder assets
-
-**Disclaimer:** This tool assists with record-keeping and report generation. It is not a substitute for professional tax advice. Always verify figures with a qualified accountant before filing with IRD.
-
-## File Structure
-
+~/KiwiBooks/
+├── shared/
+│   ├── chart-of-accounts/
+│   └── templates/
+└── businesses/
+    └── {business-slug}/
+        ├── config.json                 # Business name, GST status, tax settings
+        ├── inbox/                      # Original receipts, income files, bank statements, notes
+        ├── ledger/
+        │   ├── periods/
+        │   │   └── YYYY-MM/
+        │   │       ├── receipts.json
+        │   │       ├── income.json
+        │   │       ├── bank-transactions.json
+        │   │       ├── matches.json
+        │   │       ├── adjustments.json
+        │   │       └── period-summary.json
+        │   ├── tax-years/
+        │   │   └── YYYY-YYYY/
+        │   │       ├── assets.json
+        │   │       ├── depreciation.json
+        │   │       ├── income-tax.json
+        │   │       ├── provisional-tax.json
+        │   │       └── annual-summary.json
+        │   ├── registers/
+        │   │   ├── contacts.json
+        │   │   ├── assets-master.json
+        │   │   └── bank-accounts.json
+        │   └── indexes/
+        │       └── document-index.json
+        ├── mappings/
+        │   ├── categories.json
+        │   └── xero-account-map.json
+        ├── working/reconciliations/
+        ├── outputs/
+        └── archive/
 ```
+
+Kiwi Receipts uses JSON, but not one large file. Monthly records are split into `ledger/periods/YYYY-MM/`; annual tax records are split into `ledger/tax-years/YYYY-YYYY/`; long-lived reference data goes into `ledger/registers/`.
+
+See [`ledger-file-format.md`](references/ledger-file-format.md) for field definitions, including `gst_registered`, `gst_claimable`, `claim_status`, and non-GST handling.
+
+## Technical Notes
+
+### Report Script
+
+Generate a report from a business folder:
+
+```bash
+python3 scripts/generate_report.py \
+  --business-dir ~/KiwiBooks/businesses/my-construction-ltd \
+  --period 2026-03 \
+  --output ~/KiwiBooks/businesses/my-construction-ltd/outputs/monthly/march-report.xlsx
+```
+
+Generate a Xero CSV:
+
+```bash
+python3 scripts/generate_report.py \
+  --business-dir ~/KiwiBooks/businesses/my-construction-ltd \
+  --period 2026-03 \
+  --output ~/KiwiBooks/businesses/my-construction-ltd/outputs/xero/standard/xero.csv \
+  --format xero-csv
+```
+
+Generate a Xero precoded CSV:
+
+```bash
+python3 scripts/generate_report.py \
+  --business-dir ~/KiwiBooks/businesses/my-construction-ltd \
+  --period 2026-03 \
+  --xero-map ~/KiwiBooks/businesses/my-construction-ltd/mappings/xero-account-map.json \
+  --output ~/KiwiBooks/businesses/my-construction-ltd/outputs/xero/precoded/xero-precoded.csv \
+  --format xero-precoded-csv
+```
+
+### File Structure
+
+```text
 kiwi-receipts/
-├── SKILL.md                          # OpenClaw skill definition
+├── SKILL.md                          # Agent skill instructions
 ├── README.md                         # This file
 ├── scripts/
+│   ├── init_workspace.py             # Local KiwiBooks workspace initializer
 │   └── generate_report.py            # XLSX/CSV report generator
 └── references/
+    ├── ledger-file-format.md          # Sharded ledger schema
     ├── nz-gst-guide.md               # GST compliance reference
     ├── nz-income-tax-guide.md         # Income tax reference
-    └── nz-depreciation-rates.md       # Depreciation rates reference
+    ├── nz-depreciation-rates.md       # Depreciation rates reference
+    └── xero-import-and-ird-filing.md  # Xero/IRD filing research reference
 ```
 
-## Data Storage
+## Compliance and Limits
 
-All data is stored locally on your machine:
+This project is built with reference to:
 
-```
-~/.openclaw/data/kiwi-receipts/
-├── config.json        # Business name, GST number, settings
-├── receipts.json      # Purchase receipts
-├── income.json        # Sales/invoice records
-├── assets.json        # Depreciable assets register
-└── tax-history.json   # Previous years' tax figures
-```
+- Goods and Services Tax Act 1985 (NZ)
+- Income Tax Act 2007 (NZ)
+- Tax Administration Act 1994
+- IRD GST101A form and GST guidance
+- IRD depreciation guidance
+- Xero bank import and precoded CSV guidance
 
-No data is uploaded to any external server by this skill. Receipt image recognition uses the same AI model you have configured in your OpenClaw instance. The skill itself does not call any external API.
+Important limits:
+
+- This tool assists with record keeping and report preparation. It is not professional tax advice.
+- For GST filing, ordinary users still enter figures in myIR unless a formal IRD Gateway integration is built.
+- Xero account codes and tax rates must come from the user's Xero organisation or accountant.
+- Businesses should keep records for at least 7 tax years and verify filing outputs before submission.
+
+See the `references/` directory for detailed technical and compliance notes.
 
 ## Privacy
 
-- **All data** stored only in `~/.openclaw/data/kiwi-receipts/` on your device
-- **Vision processing** uses your OpenClaw model, not a separate service
-- **No telemetry** -- this skill does not collect, transmit, or log any usage data
-- **No network calls** -- the skill itself makes zero outbound requests
+- Accounting data is stored locally under `~/KiwiBooks/` by default.
+- Original source files are preserved under each business `inbox/`.
+- The skill itself does not add telemetry or send bookkeeping data to a separate service.
+- Any AI vision or model processing depends on the tool/runtime you choose, such as Codex, Claude Code, or OpenClaw.
 
 ## License
 

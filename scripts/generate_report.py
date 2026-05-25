@@ -11,10 +11,11 @@ from pathlib import Path
 try:
     from openpyxl import Workbook
     from openpyxl.styles import Font, Alignment, Border, Side, PatternFill, numbers
-except ImportError:
-    print("Error: openpyxl is required but not installed.", file=sys.stderr)
-    print("Install it with:  pip install openpyxl", file=sys.stderr)
-    sys.exit(1)
+    OPENPYXL_IMPORT_ERROR = None
+except ImportError as e:
+    Workbook = None
+    Font = Alignment = Border = Side = PatternFill = numbers = None
+    OPENPYXL_IMPORT_ERROR = e
 
 
 # ---------------------------------------------------------------------------
@@ -30,19 +31,8 @@ NZ_TAX_BRACKETS = [
 ACC_LEVY_RATE = 0.0167
 ACC_MAX_EARNINGS = 152790
 
-# ---------------------------------------------------------------------------
-# Xero category map (Task 11)
-# ---------------------------------------------------------------------------
-XERO_CATEGORY_MAP = {
-    "materials": "Cost of Goods Sold - Materials",
-    "tools": "Tools and Equipment",
-    "fuel": "Motor Vehicle Expenses - Fuel",
-    "vehicle": "Motor Vehicle Expenses",
-    "safety": "Health and Safety",
-    "subcontractor": "Subcontractor Expenses",
-    "office": "Office Expenses",
-    "other": "General Expenses",
-}
+STANDARD_XERO_FIELDS = ["Date", "Amount", "Payee", "Description", "Reference"]
+PRECODED_XERO_FIELDS = STANDARD_XERO_FIELDS + ["AccountCode", "TaxType", "ContactName"]
 
 
 def get_gst_period(dt: date) -> tuple[int, int, int, int]:
@@ -63,6 +53,23 @@ def period_label(start_month: int, end_month: int, year: int) -> str:
     months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
               "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
     return f"{months[start_month-1]}-{months[end_month-1]} {year}"
+
+
+def period_keys_for_report(period: str) -> list[str] | None:
+    """Return monthly period keys to load, or None for all periods."""
+    if period in ("all", "annual"):
+        return None
+    if period == "current":
+        today = date.today()
+        start_m, end_m, year, _ = get_gst_period(today)
+    else:
+        year_str, month_str = period.split("-")
+        year = int(year_str)
+        month = int(month_str)
+        start_m = month if month % 2 == 1 else month - 1
+        end_m = start_m + 1
+
+    return [f"{year:04d}-{start_m:02d}", f"{year:04d}-{end_m:02d}"]
 
 
 def filter_by_period(receipts: list, period: str) -> list:
@@ -100,16 +107,105 @@ def filter_by_period(receipts: list, period: str) -> list:
     return filtered
 
 
-HEADER_FONT = Font(bold=True, size=12, color="FFFFFF")
-HEADER_FILL = PatternFill(start_color="2B579A", end_color="2B579A", fill_type="solid")
-TITLE_FONT = Font(bold=True, size=14)
+def normalize_receipt(record: dict) -> dict:
+    if "amounts" not in record:
+        return record
+    amounts = record.get("amounts") or {}
+    normalized = dict(record)
+    normalized["total"] = amounts.get("total_incl_gst", record.get("total", 0))
+    normalized["gst"] = amounts.get("gst_claimable", record.get("gst", 0))
+    if "gst_number" not in normalized:
+        normalized["gst_number"] = record.get("supplier_gst_number", "")
+    return normalized
+
+
+def normalize_income(record: dict) -> dict:
+    if "amounts" not in record:
+        return record
+    amounts = record.get("amounts") or {}
+    normalized = dict(record)
+    amount_incl = amounts.get("amount_charged", record.get("amount_incl_gst", 0))
+    gst = amounts.get("gst_charged", record.get("gst", 0))
+    normalized["amount_incl_gst"] = amount_incl
+    normalized["gst"] = gst
+    normalized["amount_excl_gst"] = amounts.get(
+        "income_excl_gst_for_tax",
+        record.get("amount_excl_gst", amount_incl - gst),
+    )
+    return normalized
+
+
+def load_period_records(business_dir: Path, filename: str, period: str) -> list:
+    periods_root = business_dir / "ledger" / "periods"
+    if not periods_root.exists():
+        return []
+
+    period_keys = period_keys_for_report(period)
+    if period_keys is None:
+        period_dirs = sorted(path for path in periods_root.iterdir() if path.is_dir())
+    else:
+        period_dirs = [periods_root / key for key in period_keys]
+
+    records = []
+    for period_dir in period_dirs:
+        path = period_dir / filename
+        if not path.exists():
+            continue
+        with open(path) as f:
+            data = json.load(f)
+        if isinstance(data, list):
+            records.extend(data)
+    return records
+
+
+def load_business_ledger(business_dir: Path, period: str) -> tuple[list, list | None, list | None, list | None, dict | None]:
+    receipts = [normalize_receipt(r) for r in load_period_records(business_dir, "receipts.json", period)]
+    income = [normalize_income(r) for r in load_period_records(business_dir, "income.json", period)]
+    bank_records = load_period_records(business_dir, "bank-transactions.json", period)
+
+    assets = None
+    assets_path = business_dir / "ledger" / "registers" / "assets-master.json"
+    if assets_path.exists():
+        with open(assets_path) as f:
+            assets = json.load(f)
+
+    tax_history = {"years": {}}
+    tax_years_root = business_dir / "ledger" / "tax-years"
+    if tax_years_root.exists():
+        for tax_year_dir in sorted(path for path in tax_years_root.iterdir() if path.is_dir()):
+            income_tax_path = tax_year_dir / "income-tax.json"
+            provisional_path = tax_year_dir / "provisional-tax.json"
+            year_data = {}
+            if income_tax_path.exists():
+                with open(income_tax_path) as f:
+                    income_tax = json.load(f)
+                if isinstance(income_tax, dict):
+                    year_data.update(income_tax)
+            if provisional_path.exists():
+                with open(provisional_path) as f:
+                    provisional = json.load(f)
+                if isinstance(provisional, dict):
+                    year_data.update(provisional)
+            if year_data:
+                tax_history["years"][tax_year_dir.name.split("-")[0]] = year_data
+
+    return receipts, income or None, bank_records or None, assets, tax_history
+
+
 CURRENCY_FMT = '#,##0.00'
-THIN_BORDER = Border(
-    left=Side(style="thin"),
-    right=Side(style="thin"),
-    top=Side(style="thin"),
-    bottom=Side(style="thin"),
-)
+
+if OPENPYXL_IMPORT_ERROR is None:
+    HEADER_FONT = Font(bold=True, size=12, color="FFFFFF")
+    HEADER_FILL = PatternFill(start_color="2B579A", end_color="2B579A", fill_type="solid")
+    TITLE_FONT = Font(bold=True, size=14)
+    THIN_BORDER = Border(
+        left=Side(style="thin"),
+        right=Side(style="thin"),
+        top=Side(style="thin"),
+        bottom=Side(style="thin"),
+    )
+else:
+    HEADER_FONT = HEADER_FILL = TITLE_FONT = THIN_BORDER = None
 
 
 def style_header_row(ws, row: int, cols: int):
@@ -319,6 +415,39 @@ def add_income_sheet(wb: Workbook, income: list):
         ws.cell(row=i, column=6, value=r.get("gst", 0)).number_format = CURRENCY_FMT
         ws.cell(row=i, column=7, value=r.get("amount_incl_gst", 0)).number_format = CURRENCY_FMT
         for col in range(1, 8):
+            ws.cell(row=i, column=col).border = THIN_BORDER
+
+
+def add_bank_transactions_sheet(wb: Workbook, bank_transactions: list):
+    ws = wb.create_sheet("Bank Transactions")
+    headers = [
+        "Date", "Payee", "Description", "Reference", "Source Account",
+        "Amount", "Status", "Category", "Matched Record IDs",
+    ]
+    widths = [12, 25, 42, 18, 20, 14, 14, 16, 36]
+    for col, width in enumerate(widths, 1):
+        ws.column_dimensions[chr(64 + col)].width = width
+
+    for col, h in enumerate(headers, 1):
+        ws.cell(row=1, column=col, value=h)
+    style_header_row(ws, 1, len(headers))
+
+    sorted_rows = sorted(bank_transactions, key=lambda r: r.get("date", ""))
+    for i, r in enumerate(sorted_rows, start=2):
+        matched_ids = r.get("matched_record_ids", [])
+        if isinstance(matched_ids, list):
+            matched_ids = ", ".join(str(v) for v in matched_ids)
+
+        ws.cell(row=i, column=1, value=r.get("date", ""))
+        ws.cell(row=i, column=2, value=r.get("payee", ""))
+        ws.cell(row=i, column=3, value=r.get("description", ""))
+        ws.cell(row=i, column=4, value=r.get("reference", ""))
+        ws.cell(row=i, column=5, value=r.get("source_account", ""))
+        ws.cell(row=i, column=6, value=r.get("amount", 0)).number_format = CURRENCY_FMT
+        ws.cell(row=i, column=7, value=r.get("status", ""))
+        ws.cell(row=i, column=8, value=r.get("category", ""))
+        ws.cell(row=i, column=9, value=matched_ids)
+        for col in range(1, len(headers) + 1):
             ws.cell(row=i, column=col).border = THIN_BORDER
 
 
@@ -669,73 +798,175 @@ def add_ir3_sheet(wb: Workbook, receipts: list, income: list | None,
 # Task 11: Xero CSV Export
 # ---------------------------------------------------------------------------
 
-def generate_xero_csv(receipts: list, income: list | None, output_path: Path):
-    """Generate Xero-compatible CSV import file."""
+def _xero_date(dt: str) -> str:
+    try:
+        return date.fromisoformat(dt).strftime("%d/%m/%Y")
+    except (ValueError, TypeError):
+        return dt or ""
+
+
+def _items_description(record: dict) -> str:
+    return ", ".join(
+        item.get("description", "") for item in record.get("items", [])
+    ) or record.get("description", "") or record.get("merchant", "")
+
+
+def _load_xero_map(path: Path | None) -> dict:
+    if not path:
+        return {}
+    if not path.exists():
+        raise ValueError(f"Xero map file not found: {path}")
+    try:
+        with open(path) as f:
+            data = json.load(f)
+    except json.JSONDecodeError as e:
+        raise ValueError(f"Xero map file is not valid JSON: {e}") from e
+    if not isinstance(data, dict):
+        raise ValueError("Xero map file must contain a JSON object")
+    return data
+
+
+def _mapping_for_row(source_type: str, category: str, xero_map: dict) -> dict:
+    if source_type == "income":
+        return xero_map.get("income", {}) or {}
+    return (xero_map.get("categories", {}) or {}).get(category, {}) or {}
+
+
+def _apply_precoding(row: dict, source: dict, source_type: str, category: str,
+                     xero_map: dict, missing: list[str]):
+    mapping = _mapping_for_row(source_type, category, xero_map)
+    defaults = xero_map.get("defaults", {}) or {}
+    source_xero = source.get("xero", {}) or {}
+
+    account_code = (
+        source.get("account_code")
+        or source_xero.get("account_code")
+        or mapping.get("account_code")
+        or mapping.get("AccountCode")
+    )
+    tax_type = (
+        source.get("tax_type")
+        or source_xero.get("tax_type")
+        or mapping.get("tax_type")
+        or mapping.get("TaxType")
+    )
+
+    if not tax_type and account_code:
+        if source_type == "income":
+            tax_type = defaults.get("income_tax_type")
+        else:
+            tax_type = defaults.get("expense_tax_type")
+
+    contact_name = (
+        source.get("contact_name")
+        or source_xero.get("contact_name")
+        or mapping.get("contact_name")
+        or mapping.get("ContactName")
+        or row.get("Payee")
+    )
+
+    row["AccountCode"] = str(account_code or "").strip()
+    row["TaxType"] = str(tax_type or "").strip()
+    row["ContactName"] = str(contact_name or "").strip()
+
+    if not row["AccountCode"] or not row["TaxType"]:
+        label = row.get("Reference") or row.get("Description") or row.get("Payee") or "unknown row"
+        missing.append(f"{label} (category={category or source_type})")
+
+
+def _row_from_bank_transaction(t: dict) -> tuple[dict, str, str]:
+    amount = round(float(t.get("amount", 0) or 0), 2)
+    source_type = "income" if amount > 0 else "expense"
+    category = t.get("category") or ("income" if source_type == "income" else "other")
+    payee = t.get("payee") or t.get("merchant") or t.get("client") or ""
+    row = {
+        "Date": _xero_date(t.get("date", "")),
+        "Amount": f"{amount:.2f}",
+        "Payee": payee,
+        "Description": t.get("description", ""),
+        "Reference": t.get("reference") or t.get("id", ""),
+        "_sort_date": t.get("date", ""),
+    }
+    return row, source_type, category
+
+
+def _row_from_receipt(r: dict) -> tuple[dict, str, str]:
+    amount = -round(float(r.get("total", 0) or 0), 2)
+    category = r.get("category", "other")
+    row = {
+        "Date": _xero_date(r.get("date", "")),
+        "Amount": f"{amount:.2f}",
+        "Payee": r.get("merchant", ""),
+        "Description": _items_description(r),
+        "Reference": r.get("id", ""),
+        "_sort_date": r.get("date", ""),
+    }
+    return row, "expense", category
+
+
+def _row_from_income(r: dict) -> tuple[dict, str, str]:
+    amount = round(float(r.get("amount_incl_gst", 0) or 0), 2)
+    row = {
+        "Date": _xero_date(r.get("date", "")),
+        "Amount": f"{amount:.2f}",
+        "Payee": r.get("client", ""),
+        "Description": r.get("description", ""),
+        "Reference": r.get("invoice_number") or r.get("id", ""),
+        "_sort_date": r.get("date", ""),
+    }
+    return row, "income", "income"
+
+
+def generate_xero_csv(receipts: list, income: list | None, bank_transactions: list | None,
+                      output_path: Path, *, precoded: bool = False,
+                      xero_map_path: Path | None = None):
+    """Generate a Xero-compatible bank statement CSV import file."""
+    xero_map = _load_xero_map(xero_map_path) if precoded else {}
     rows = []
+    missing_precodes = []
 
-    for r in receipts:
-        dt = r.get("date", "")
-        try:
-            d = date.fromisoformat(dt)
-            formatted_date = d.strftime("%d/%m/%Y")
-        except (ValueError, TypeError):
-            formatted_date = dt
+    source_rows = []
+    if bank_transactions:
+        source_rows.extend((_row_from_bank_transaction(t), t) for t in bank_transactions)
+    else:
+        source_rows.extend((_row_from_receipt(r), r) for r in receipts)
+        if income:
+            source_rows.extend((_row_from_income(r), r) for r in income)
 
-        total = r.get("total", 0)
-        category = r.get("category", "other")
-        xero_cat = XERO_CATEGORY_MAP.get(category, "General Expenses")
-        items_desc = ", ".join(
-            item.get("description", "") for item in r.get("items", [])
-        ) or ""
+    for (row, source_type, category), source in source_rows:
+        if precoded:
+            _apply_precoding(row, source, source_type, category, xero_map, missing_precodes)
+        rows.append(row)
 
-        rows.append({
-            "Date": formatted_date,
-            "Amount": round(-total, 2),  # Negative for expenses
-            "Payee": r.get("merchant", ""),
-            "Description": items_desc,
-            "Reference": r.get("id", ""),
-            "Category": xero_cat,
-            "_sort_date": dt,
-        })
-
-    if income:
-        for r in income:
-            dt = r.get("date", "")
-            try:
-                d = date.fromisoformat(dt)
-                formatted_date = d.strftime("%d/%m/%Y")
-            except (ValueError, TypeError):
-                formatted_date = dt
-
-            rows.append({
-                "Date": formatted_date,
-                "Amount": round(r.get("amount_incl_gst", 0), 2),  # Positive for income
-                "Payee": r.get("client", ""),
-                "Description": r.get("description", ""),
-                "Reference": r.get("invoice_number", ""),
-                "Category": "Sales",
-                "_sort_date": dt,
-            })
+    if missing_precodes:
+        preview = "\n".join(f"  - {item}" for item in missing_precodes[:20])
+        extra = "" if len(missing_precodes) <= 20 else f"\n  ...and {len(missing_precodes) - 20} more"
+        raise ValueError(
+            "Cannot generate Xero precoded CSV because these rows are missing "
+            f"AccountCode or TaxType:\n{preview}{extra}"
+        )
 
     # Sort by date
     rows.sort(key=lambda x: x.get("_sort_date", ""))
 
     # Write CSV
-    fieldnames = ["Date", "Amount", "Payee", "Description", "Reference", "Category"]
+    fieldnames = PRECODED_XERO_FIELDS if precoded else STANDARD_XERO_FIELDS
     with open(output_path, "w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction="ignore")
         writer.writeheader()
         writer.writerows(rows)
 
     # Print JSON summary
-    total_expenses = sum(r["Amount"] for r in rows if r["Amount"] < 0)
-    total_income = sum(r["Amount"] for r in rows if r["Amount"] > 0)
+    amounts = [float(r["Amount"]) for r in rows]
+    total_expenses = sum(amount for amount in amounts if amount < 0)
+    total_income = sum(amount for amount in amounts if amount > 0)
     summary = {
-        "format": "xero-csv",
+        "format": "xero-precoded-csv" if precoded else "xero-csv",
         "output": str(output_path),
         "total_rows": len(rows),
-        "expense_rows": sum(1 for r in rows if r["Amount"] < 0),
-        "income_rows": sum(1 for r in rows if r["Amount"] > 0),
+        "source": "bank-transactions" if bank_transactions else "receipts-income",
+        "expense_rows": sum(1 for amount in amounts if amount < 0),
+        "income_rows": sum(1 for amount in amounts if amount > 0),
         "total_expenses": round(total_expenses, 2),
         "total_income": round(total_income, 2),
     }
@@ -748,21 +979,24 @@ def generate_xero_csv(receipts: list, income: list | None, output_path: Path):
 
 def main():
     parser = argparse.ArgumentParser(description="Generate IRD GST report")
-    parser.add_argument("--data", required=True, help="Path to receipts.json")
+    parser.add_argument("--business-dir", default=None, help="Business directory using sharded ledger layout")
+    parser.add_argument("--data", default=None, help="Path to receipts.json")
     parser.add_argument("--output", required=True, help="Output XLSX path")
     parser.add_argument("--period", default="current", help="Period: 'current', 'all', or 'YYYY-MM'")
     parser.add_argument("--business-name", default="", help="Business name")
     parser.add_argument("--gst-number", default="", help="GST/IRD number")
     parser.add_argument("--income", default=None, help="Path to income.json")
+    parser.add_argument("--bank-transactions", default=None, help="Path to bank-transactions.json")
     parser.add_argument("--assets", default=None, help="Path to assets.json")
     parser.add_argument("--tax-history", default=None, help="Path to tax-history.json")
-    parser.add_argument("--format", default="xlsx", choices=["xlsx", "xero-csv"], help="Output format")
+    parser.add_argument("--xero-map", default=None, help="Path to xero-account-map.json")
+    parser.add_argument(
+        "--format",
+        default="xlsx",
+        choices=["xlsx", "xero-csv", "xero-precoded-csv"],
+        help="Output format",
+    )
     args = parser.parse_args()
-
-    data_path = Path(args.data)
-    if not data_path.exists():
-        print(f"No receipt data found at {data_path}", file=sys.stderr)
-        sys.exit(1)
 
     def load_json(path: Path, label: str):
         try:
@@ -772,32 +1006,54 @@ def main():
             print(f"Error: {label} is not valid JSON: {e}", file=sys.stderr)
             sys.exit(1)
 
-    all_receipts = load_json(data_path, "receipts.json")
-    receipts = filter_by_period(all_receipts, args.period)
+    if args.business_dir:
+        business_dir = Path(args.business_dir)
+        if not business_dir.exists():
+            print(f"Business directory not found: {business_dir}", file=sys.stderr)
+            sys.exit(1)
+        receipts, income_records, bank_records, assets, tax_history = load_business_ledger(
+            business_dir,
+            args.period,
+        )
+    else:
+        all_receipts = []
+        if args.data:
+            data_path = Path(args.data)
+            if data_path.exists():
+                all_receipts = load_json(data_path, "receipts.json")
+        receipts = filter_by_period(all_receipts, args.period)
 
-    # Load income records
-    income_records = None
-    if args.income:
-        income_path = Path(args.income)
-        if income_path.exists():
-            all_income = load_json(income_path, "income.json")
-            income_records = filter_by_period(all_income, args.period)
+        # Load income records
+        income_records = None
+        if args.income:
+            income_path = Path(args.income)
+            if income_path.exists():
+                all_income = load_json(income_path, "income.json")
+                income_records = filter_by_period(all_income, args.period)
 
-    # Load assets (no period filter -- all active assets)
-    assets = None
-    if args.assets:
-        assets_path = Path(args.assets)
-        if assets_path.exists():
-            assets = load_json(assets_path, "assets.json")
+        # Load bank transactions
+        bank_records = None
+        if args.bank_transactions:
+            bank_path = Path(args.bank_transactions)
+            if bank_path.exists():
+                all_bank_records = load_json(bank_path, "bank-transactions.json")
+                bank_records = filter_by_period(all_bank_records, args.period)
 
-    # Load tax history
-    tax_history = None
-    if args.tax_history:
-        th_path = Path(args.tax_history)
-        if th_path.exists():
-            tax_history = load_json(th_path, "tax-history.json")
+        # Load assets (no period filter -- all active assets)
+        assets = None
+        if args.assets:
+            assets_path = Path(args.assets)
+            if assets_path.exists():
+                assets = load_json(assets_path, "assets.json")
 
-    if not receipts and not income_records and not assets:
+        # Load tax history
+        tax_history = None
+        if args.tax_history:
+            th_path = Path(args.tax_history)
+            if th_path.exists():
+                tax_history = load_json(th_path, "tax-history.json")
+
+    if not receipts and not income_records and not assets and not bank_records:
         print(f"No data found for period: {args.period}", file=sys.stderr)
         sys.exit(1)
     if not receipts:
@@ -819,12 +1075,28 @@ def main():
     output_path = Path(args.output)
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    # --- Xero CSV branch ---
-    if args.format == "xero-csv":
-        generate_xero_csv(receipts, income_records, output_path)
+    # --- Xero CSV branches ---
+    if args.format in ("xero-csv", "xero-precoded-csv"):
+        try:
+            generate_xero_csv(
+                receipts,
+                income_records,
+                bank_records,
+                output_path,
+                precoded=args.format == "xero-precoded-csv",
+                xero_map_path=Path(args.xero_map) if args.xero_map else None,
+            )
+        except ValueError as e:
+            print(f"Error: {e}", file=sys.stderr)
+            sys.exit(1)
         return
 
     # --- XLSX branch ---
+    if OPENPYXL_IMPORT_ERROR is not None:
+        print("Error: openpyxl is required for XLSX reports but is not installed.", file=sys.stderr)
+        print("Install it with:  pip install openpyxl", file=sys.stderr)
+        sys.exit(1)
+
     wb = Workbook()
     add_summary_sheet(wb, receipts, p_label, args.business_name, args.gst_number)
     add_receipts_sheet(wb, receipts)
@@ -834,6 +1106,10 @@ def main():
     # Income sheet (if income data available)
     if income_records:
         add_income_sheet(wb, income_records)
+
+    # Bank statement sheet (if bank data available)
+    if bank_records:
+        add_bank_transactions_sheet(wb, bank_records)
 
     # Depreciation and IR3 (for annual / "all" period)
     total_depreciation = 0.0
@@ -893,6 +1169,13 @@ def main():
         output_data["income_total_incl_gst"] = income_total_incl
         output_data["income_total_excl_gst"] = income_total_excl
         output_data["income_total_gst"] = income_total_gst
+
+    if bank_records:
+        bank_income = round(sum(r.get("amount", 0) for r in bank_records if r.get("amount", 0) > 0), 2)
+        bank_expenses = round(sum(r.get("amount", 0) for r in bank_records if r.get("amount", 0) < 0), 2)
+        output_data["bank_transaction_count"] = len(bank_records)
+        output_data["bank_income"] = bank_income
+        output_data["bank_expenses"] = bank_expenses
 
     print(json.dumps(output_data))
 

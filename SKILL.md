@@ -1,49 +1,162 @@
 ---
 name: kiwi-receipts
-description: "NZ tax assistant for sole traders. Process receipt photos into IRD-ready GST reports, track sales income for GST Box 5, calculate IR3 annual income tax, provisional tax, asset depreciation, and export to Xero CSV. Use when: (1) user sends a receipt/invoice photo, (2) user asks about GST, income tax, or tax returns, (3) user wants to export receipts or generate reports, (4) user mentions IRD, GST, IR3, provisional tax, or depreciation."
+description: "NZ bookkeeping and tax assistant for small businesses and sole traders. Initialize a local KiwiBooks workspace, capture receipts, income, bank statements, and bookkeeping notes, reconcile bank lines with records, generate monthly finance summaries, IRD-ready GST/IR3 XLSX reports, and Xero standard or precoded bank statement CSV exports. Use when: (1) user sends a receipt, invoice, bank statement, or bookkeeping note, (2) user asks about GST, income tax, monthly accounts, reconciliation, or tax returns, (3) user wants to export receipts, generate reports, or create Xero imports, (4) user mentions IRD, GST, IR3, Xero, precoded CSV, provisional tax, depreciation, income, expense, or bank matching."
 metadata:
   {
     "openclaw":
       {
         "emoji": "🧾",
-        "triggers": ["receipt", "invoice", "gst", "ird", "tax", "ir3", "depreciation", "provisional", "income", "asset"],
+        "triggers": ["receipt", "invoice", "bank statement", "reconcile", "bookkeeping", "gst", "ird", "tax", "ir3", "xero", "precoded", "depreciation", "provisional", "income", "expense", "asset"],
       },
   }
 ---
 
 # Kiwi Receipts
 
-NZ tax assistant for sole trader builders and contractors. Process receipt photos into IRD-ready GST reports, track sales income, calculate annual income tax (IR3), provisional tax, and asset depreciation. Export to XLSX or Xero CSV.
+NZ bookkeeping and tax assistant for small businesses, sole traders, builders, and contractors. Capture receipts and income, import bank statement data, match source records to bank transactions, summarize monthly finances, calculate GST/IR3/provisional tax/depreciation, and export XLSX plus Xero standard or precoded CSV files.
 
 This is a personal-use skill -- each user runs their own instance. No multi-tenant, no login.
 
-## Data Paths
+## Core Rule
 
+Do not start bookkeeping work until the workspace readiness check has passed. The first useful reply after setup must explain the workflow in plain language: collect income, expenses, and bank statements; match them together; review uncertain matches; then generate monthly summaries, IRD figures, and Xero import files.
+
+When changing or relying on ledger storage, read `references/ledger-file-format.md` first.
+When changing or relying on Xero import behavior, IRD filing behavior, or New Zealand record-keeping rules, read `references/xero-import-and-ird-filing.md` first.
+
+## Workspace Model
+
+Default bookkeeping root:
+
+```text
+~/KiwiBooks
 ```
-~/.openclaw/data/kiwi-receipts/
-├── config.json        # Business name, GST number, tax settings
-├── receipts.json      # All captured purchase receipts
-├── income.json        # Sales/invoice records
-├── assets.json        # Depreciable assets register
-└── tax-history.json   # Previous years' tax figures (for provisional tax)
+
+Global pointer config:
+
+```text
+~/.openclaw/data/kiwi-receipts/config.json
+```
+
+Expected root structure:
+
+```text
+~/KiwiBooks/
+├── shared/
+│   ├── chart-of-accounts/
+│   └── templates/
+└── businesses/
+    └── {business-slug}/
+        ├── config.json
+        ├── inbox/
+        │   ├── receipts/
+        │   ├── income/
+        │   ├── bank-statements/
+        │   └── notes/
+        ├── ledger/
+        │   ├── periods/
+        │   │   └── YYYY-MM/
+        │   │       ├── receipts.json
+        │   │       ├── income.json
+        │   │       ├── bank-transactions.json
+        │   │       ├── matches.json
+        │   │       ├── adjustments.json
+        │   │       └── period-summary.json
+        │   ├── tax-years/
+        │   │   └── YYYY-YYYY/
+        │   │       ├── assets.json
+        │   │       ├── depreciation.json
+        │   │       ├── income-tax.json
+        │   │       ├── provisional-tax.json
+        │   │       └── annual-summary.json
+        │   ├── registers/
+        │   │   ├── contacts.json
+        │   │   ├── assets-master.json
+        │   │   └── bank-accounts.json
+        │   └── indexes/
+        │       └── document-index.json
+        ├── mappings/
+        │   ├── categories.json
+        │   └── xero-account-map.json
+        ├── working/
+        │   └── reconciliations/
+        ├── outputs/
+        │   ├── monthly/
+        │   ├── ird/
+        │   │   ├── gst/
+        │   │   └── ir3/
+        │   ├── xero/
+        │   │   ├── standard/
+        │   │   └── precoded/
+        │   └── accountant/
+        └── archive/
 ```
 
 ## First-Time Setup
 
-When user sends "setup", or on first use when `config.json` doesn't exist:
+Run this check when the user says "setup" or before any command that reads or writes bookkeeping data.
 
-1. Ask for business name
-2. Ask for GST/IRD number
-3. Ask for vehicle business use % (default 80)
-4. Ask for phone business use % (default 70)
-5. Save to `~/.openclaw/data/kiwi-receipts/config.json`:
+### 1. Discover or create the root
+
+1. Read `~/.openclaw/data/kiwi-receipts/config.json` if it exists.
+2. If it contains `books_root`, use that path.
+3. Otherwise use `~/KiwiBooks` as the proposed root.
+4. If the root does not exist, create it when the user asked for setup or clearly wants bookkeeping work to begin. If creation fails, ask the user to choose a writable folder to use as the root for all bookkeeping entities.
+5. Save the selected root to the global pointer config:
 
 ```json
 {
+  "books_root": "/Users/example/KiwiBooks",
+  "active_business": "my-construction-ltd",
+  "businesses": {
+    "my-construction-ltd": "/Users/example/KiwiBooks/businesses/my-construction-ltd"
+  }
+}
+```
+
+### 2. Select or create a business folder
+
+Ask only for missing details:
+
+1. Ask for business name
+2. Ask for GST/IRD number if registered or known
+3. Ask for balance date (default `31-march`)
+4. Ask whether the business is GST registered. If not registered, set `gst_registered: false`, leave `gst_number` blank, and set GST filing fields to `null`.
+5. If GST registered, ask for GST number, registration start date, filing frequency, and accounting basis.
+6. Ask for vehicle business use % when vehicle expenses are expected (default 80)
+7. Ask for phone business use % when phone expenses are expected (default 70)
+
+Create `~/KiwiBooks/businesses/{business-slug}/` and the expected subdirectories. Do not delete unknown files or folders. If a directory already exists, validate it and create only missing expected directories/files.
+
+Use the bundled initializer when running in an environment where scripts can be executed:
+
+```bash
+python3 {baseDir}/scripts/init_workspace.py \
+  --root "$BOOKS_ROOT" \
+  --business-name "My Construction Ltd" \
+  --vehicle-business-percent 80 \
+  --phone-business-percent 70
+```
+
+Save business config to `{business_dir}/config.json`:
+
+```json
+{
+  "schema_version": 2,
   "business_name": "My Construction Ltd",
-  "gst_number": "12-345-678",
   "balance_date": "31-march",
-  "gst_filing_frequency": "2-monthly",
+  "gst_registered": false,
+  "gst_number": "",
+  "gst_registered_from": null,
+  "gst_deregistered_from": null,
+  "gst_filing_frequency": null,
+  "gst_accounting_basis": null,
+  "gst_registration_monitoring": {
+    "enabled": true,
+    "threshold_nzd": 60000,
+    "lookback_months": 12,
+    "forecast_months": 12
+  },
   "depreciation_method": "DV",
   "vehicle_business_percent": 80,
   "phone_business_percent": 70,
@@ -51,69 +164,56 @@ When user sends "setup", or on first use when `config.json` doesn't exist:
 }
 ```
 
-### income.json structure
+### 3. Initialize ledger files
 
-Each entry represents an invoice or payment received:
+Create these sharded files if missing. Do not append new records to legacy root-level files such as `ledger/receipts.json`.
 
-```json
-[
-  {
-    "id": "uuid-here",
-    "date": "2026-03-15",
-    "client": "ABC Homes Ltd",
-    "description": "Bathroom renovation - 42 Rimu St",
-    "amount_excl_gst": 8500.65,
-    "gst": 1274.35,
-    "amount_incl_gst": 9775.00,
-    "invoice_number": "INV-2026-015",
-    "status": "paid",
-    "created_at": "2026-03-15T14:30:00Z"
-  }
-]
+```text
+ledger/periods/YYYY-MM/receipts.json             []
+ledger/periods/YYYY-MM/income.json               []
+ledger/periods/YYYY-MM/bank-transactions.json    []
+ledger/periods/YYYY-MM/matches.json              []
+ledger/periods/YYYY-MM/adjustments.json          []
+ledger/periods/YYYY-MM/period-summary.json       {}
+ledger/tax-years/YYYY-YYYY/assets.json           []
+ledger/tax-years/YYYY-YYYY/depreciation.json     []
+ledger/tax-years/YYYY-YYYY/income-tax.json       {}
+ledger/tax-years/YYYY-YYYY/provisional-tax.json  {}
+ledger/tax-years/YYYY-YYYY/annual-summary.json   {}
+ledger/registers/contacts.json                   []
+ledger/registers/assets-master.json              []
+ledger/registers/bank-accounts.json              []
+ledger/indexes/document-index.json               []
+mappings/categories.json                         {}
+mappings/xero-account-map.json                   {"categories": {}, "income": {}, "defaults": {}}
 ```
 
-### assets.json structure
+If legacy files exist in `~/.openclaw/data/kiwi-receipts/`, offer to copy them into the selected business ledger and leave the legacy originals untouched. Never move or overwrite legacy files without explicit user confirmation.
 
-```json
-[
-  {
-    "id": "uuid-here",
-    "name": "DeWalt DCS570 Circular Saw",
-    "category": "portable_power_tools",
-    "purchase_date": "2026-01-15",
-    "cost": 899.00,
-    "dv_rate": 0.40,
-    "sl_rate": 0.30,
-    "method": "DV",
-    "business_percent": 100,
-    "disposed": false,
-    "disposal_date": null,
-    "disposal_amount": null,
-    "created_at": "2026-01-15T10:00:00Z"
-  }
-]
+### 4. Explain the workflow before serving
+
+After setup is ready, explain:
+
+```text
+Kiwi Receipts works in four steps:
+1. Collect source records: receipts, income/invoices, bank statements, and notes.
+2. Normalize them into a local ledger under your business folder.
+3. Match bank statement lines to receipts and income by date, amount, merchant/client, and references.
+4. Generate outputs: monthly finance summary, IRD GST/IR3 workbooks, and Xero bank statement CSVs. For Xero precoded CSVs, we need your Xero account-code and tax-rate mapping first.
 ```
 
-### tax-history.json structure
+Keep the explanation short and then ask for the next source file or command.
 
-```json
-{
-  "years": {
-    "2025": {
-      "tax_year_end": "2025-03-31",
-      "gross_income": 95000.00,
-      "total_expenses": 42000.00,
-      "depreciation": 3500.00,
-      "taxable_income": 49500.00,
-      "tax_on_income": 7582.50,
-      "acc_levy": 826.50,
-      "total_tax": 8409.00,
-      "tax_already_paid": 0,
-      "residual_income_tax": 8409.00
-    }
-  }
-}
-```
+## Ledger File Format
+
+The source of truth is JSON, but it is sharded by period:
+
+- Monthly facts go in `ledger/periods/YYYY-MM/`.
+- Annual tax calculations go in `ledger/tax-years/YYYY-YYYY/`.
+- Long-lived registers go in `ledger/registers/`.
+- Mappings go in `mappings/`.
+
+Before writing or changing any ledger file, read `references/ledger-file-format.md`. New records must not be appended to old root-level files like `ledger/receipts.json`; those are legacy migration inputs only.
 
 ## Handling Receipt Photos
 
@@ -144,6 +244,7 @@ Use your vision capabilities to analyze the receipt image. Extract:
 - NZ GST is 15%. If only total is visible, calculate GST as `total × 3/23`
 - If GST is shown separately on the receipt, use that value
 - Detect the GST number if printed on the receipt
+- If the business is not GST registered, preserve observed/calculated GST as evidence but set `gst_claimable` to `0`, `claim_status` to `not_claimable_not_registered`, and Xero tax type to `No GST` or the user's configured equivalent.
 - Classify into categories: `materials`, `tools`, `fuel`, `safety`, `subcontractor`, `office`, `vehicle`, `other`
 - Dates: parse to ISO format (YYYY-MM-DD), assume current year if not shown
 - All amounts in NZD
@@ -165,42 +266,102 @@ Reply to save, or correct any details.
 
 ### Step 3: Save receipt data
 
-After confirmation, append to `~/.openclaw/data/kiwi-receipts/receipts.json`:
+After confirmation, append to `{business_dir}/ledger/periods/YYYY-MM/receipts.json`, where `YYYY-MM` comes from the receipt date:
 
 ```bash
-mkdir -p ~/.openclaw/data/kiwi-receipts
+mkdir -p "$BUSINESS_DIR/ledger/periods/2026-03"
 ```
 
-Read existing `receipts.json` (or start with `[]`), append the new receipt with a generated UUID as `id`, and write back. Each receipt object:
+Read existing monthly `receipts.json` (or start with `[]`), append the new receipt with a generated UUID as `id`, and write back. Follow the receipt schema in `references/ledger-file-format.md`. Core fields include:
 
 ```json
 {
   "id": "uuid-here",
   "merchant": "...",
   "date": "2026-03-15",
+  "period": "2026-03",
   "items": [...],
-  "subtotal": 174.00,
-  "gst": 22.57,
-  "total": 174.00,
-  "gst_number": "...",
+  "amounts": {
+    "total_incl_gst": 174.00,
+    "gst_observed": 22.57,
+    "gst_calculated": 22.70,
+    "gst_claimable": 0.00,
+    "total_excl_gst_for_tax": 174.00
+  },
+  "gst_treatment": {
+    "business_gst_registered": false,
+    "supplier_gst_registered": true,
+    "claim_status": "not_claimable_not_registered",
+    "tax_rate": "No GST"
+  },
   "category": "materials",
   "payment_method": "EFTPOS",
   "created_at": "2026-03-15T10:30:00Z"
 }
 ```
 
+Also copy or reference the original receipt image under `{business_dir}/inbox/receipts/YYYY-MM/` when a file path is available. Store the relative path on the receipt object as `source_file` and add an entry to `ledger/indexes/document-index.json`.
+
+## Handling Bank Statements
+
+When the user provides a bank statement CSV/XLSX/PDF or says "import bank statement":
+
+1. Save the original file under `{business_dir}/inbox/bank-statements/YYYY-MM/`.
+2. Extract rows into normalized bank transactions with ISO dates and signed NZD amounts.
+3. Ask the user for the bank account name if it is not obvious.
+4. Append new rows to `{business_dir}/ledger/periods/YYYY-MM/bank-transactions.json`; avoid duplicates by comparing date, amount, payee/description, reference, and source account.
+5. Start reconciliation for the imported date range.
+
+For CSV/XLSX, preserve the original file and parse structured columns. For PDF statements, extract cautiously and ask for review when dates, amounts, or descriptions are ambiguous.
+
+### Reconciliation logic
+
+Match bank lines against receipts and income:
+
+- Expense bank lines are negative and should match receipt totals.
+- Income bank lines are positive and should match `amount_incl_gst` from income records.
+- Strong match: exact amount plus date within 3 days plus merchant/client/reference similarity.
+- Medium match: exact amount plus either date proximity or merchant/client similarity.
+- Low confidence or many-to-one candidates: ask the user to choose. Do not mark as accepted automatically.
+- Record every accepted match in the same month folder's `matches.json` and update that month's `bank-transactions.json` with status, matched record ids, category, account code/tax type when available, and confidence.
+
+Unmatched lines must remain visible in the monthly summary as `unmatched_income`, `unmatched_expense`, or `needs_review`.
+
+### Monthly finance summary
+
+For `month YYYY-MM`, `monthly summary`, or `reconcile YYYY-MM`, show:
+
+```text
+Monthly Summary: March 2026
+Bank income: $29,670.00
+Bank expenses: $8,420.50
+Matched receipts: 23 / 25
+Matched income records: 8 / 8
+Unmatched bank lines: 3
+GST collected estimate: $3,870.00
+GST claimable estimate: $1,098.33
+Net GST estimate: $2,771.67 payable
+```
+
+Always distinguish bank totals from source-record totals when they differ.
+
 ## Handling Text Commands
 
+Before any command that reads/writes data, resolve `{business_dir}` from the global pointer config and active business. If no active business exists, run First-Time Setup.
+
 ### "setup"
-Create or update `config.json` with business name and GST number.
+Run the workspace readiness check, create/validate the business directory, initialize missing ledger/mapping files, and explain the workflow.
 
 ### "summary"
-Read `receipts.json`, filter to current GST period, show:
+Read the relevant `ledger/periods/YYYY-MM/` folders for the current GST/monthly period and show both source-record and bank-matched totals:
+
 ```
 GST Period: Mar-Apr 2026
 Total purchases: $1,527.37
 Total GST claimable: $199.13
 Receipts: 5
+Bank lines matched: 5
+Unmatched bank lines: 1
 
 By category:
   Materials: $882.97 (GST: $115.17)
@@ -214,11 +375,8 @@ Generate and send XLSX report:
 
 ```bash
 python3 {baseDir}/scripts/generate_report.py \
-  --data ~/.openclaw/data/kiwi-receipts/receipts.json \
-  --income ~/.openclaw/data/kiwi-receipts/income.json \
-  --assets ~/.openclaw/data/kiwi-receipts/assets.json \
-  --tax-history ~/.openclaw/data/kiwi-receipts/tax-history.json \
-  --output /tmp/gst-report.xlsx \
+  --business-dir "$BUSINESS_DIR" \
+  --output "$BUSINESS_DIR/outputs/ird/gst/gst-report.xlsx" \
   --period current \
   --business-name "from config.json" \
   --gst-number "from config.json"
@@ -229,26 +387,27 @@ Then send the file back to user via message tool with `sendAttachment` action.
 ### "report YYYY-MM"
 Generate report for a specific GST period (the 2-month period containing that month).
 
-**XLSX report contains up to 7 sheets:**
+**XLSX report contains up to 8 sheets:**
 
 1. **GST Summary** -- Business info, period, total purchases/GST
 2. **All Receipts** -- Date, merchant, category, items, amounts
 3. **By Category** -- materials/tools/fuel/safety/etc. subtotals
 4. **IRD GST101A** -- Pre-filled with official box numbers (see below)
-5. **Income** -- Sales/invoice records (if income.json has data)
-6. **Depreciation** -- Asset depreciation schedule (if assets.json has data)
-7. **IR3 Annual Tax** -- Annual income tax summary (when period=all or period=annual)
+5. **Income** -- Sales/invoice records from monthly period files
+6. **Bank Transactions** -- Imported statement lines and match status from monthly period files
+7. **Depreciation** -- Asset depreciation schedule from tax-year files
+8. **IR3 Annual Tax** -- Annual income tax summary (when period=all or period=annual)
 
 **GST101A auto-fill logic:**
 
-If income.json has data for the period, BOTH sides are auto-filled:
-- Box 5: Total sales and income (from income.json) -- AUTO-FILLED
+If monthly income files have data for the period, BOTH sides are auto-filled:
+- Box 5: Total sales and income (from monthly income records) -- AUTO-FILLED
 - Box 6: Zero-rated supplies (default $0)
 - Box 7: Box 5 - Box 6 -- auto-calculated
 - Box 8: Box 7 x 3/23 -- auto-calculated
 - Box 9: Adjustments (default $0)
 - Box 10: Total GST collected (Box 8 + Box 9) -- auto-calculated
-- Box 11: Total purchases incl GST (from receipts.json) -- auto-filled
+- Box 11: Total purchases incl GST (from monthly receipt records) -- auto-filled
 - Box 12: Box 11 x 3/23 -- auto-calculated
 - Box 13: Credit adjustments (default $0)
 - Box 14: Total GST credit (Box 12 + Box 13) -- auto-calculated
@@ -257,14 +416,24 @@ If income.json has data for the period, BOTH sides are auto-filled:
 If no income data exists, Box 5 still shows "enter from accounts" as before.
 
 ### "delete last"
-Remove the most recently added receipt from `receipts.json`.
+Remove the most recently added receipt from the relevant monthly `ledger/periods/YYYY-MM/receipts.json`.
 
 ### "list"
 Show recent receipts (last 10) with date, merchant, total.
 
+### "import bank statement"
+Import and normalize a bank statement into monthly `ledger/periods/YYYY-MM/bank-transactions.json` files, then run reconciliation for the statement date range.
+
+### "reconcile" or "reconcile YYYY-MM"
+Run bank matching, update monthly `matches.json`, and show accepted, suggested, and unmatched lines. Ask for user review on ambiguous lines.
+
 ### "help"
 ```
 Kiwi Receipts -- Commands:
+
+SETUP:
+  "setup"                    Configure or validate bookkeeping workspace
+  "help"                     This message
 
 RECEIPTS:
   [Send photo]     Capture a receipt
@@ -273,6 +442,12 @@ RECEIPTS:
   "report 2026-03" Report for specific period
   "list"           Show recent receipts
   "delete last"    Remove last receipt
+
+BANK:
+  "import bank statement"    Import a bank CSV/XLSX/PDF
+  "reconcile"               Match bank lines to records
+  "reconcile 2026-03"        Reconcile a month
+  "month 2026-03"            Monthly bank/source summary
 
 INCOME:
   "income 9775 description"  Record sales invoice
@@ -292,11 +467,8 @@ TAX:
   "export ir3"               Annual XLSX report
 
 EXPORT:
-  "xero export"              Generate Xero-importable CSV
-
-SETUP:
-  "setup"                    Configure business details
-  "help"                     This message
+  "xero export"              Generate standard Xero bank CSV
+  "xero precoded export"     Generate Xero precoded bank CSV
 ```
 
 ## Handling Income / Sales
@@ -310,9 +482,8 @@ User: income 9775 Bathroom renovation - 42 Rimu St, ABC Homes
 ```
 
 Parse:
-- amount_incl_gst: 9775.00
-- gst: 9775 x 3/23 = 1274.35
-- amount_excl_gst: 9775 - 1274.35 = 8500.65
+- If GST registered and invoice includes GST: amount_incl_gst, gst, amount_excl_gst
+- If not GST registered: `amount_charged` equals income for tax, `gst_charged` is 0, and invoice wording should say no GST has been charged
 - client: extract from description (text after last comma, or ask)
 - description: remaining text
 - date: today (unless user specifies)
@@ -328,7 +499,7 @@ Income recorded:
 Reply to save, or correct any details.
 ```
 
-After confirmation, append to `~/.openclaw/data/kiwi-receipts/income.json`.
+After confirmation, append to `{business_dir}/ledger/periods/YYYY-MM/income.json`.
 
 ### "income list"
 Show last 10 income entries with date, client, amount.
@@ -375,7 +546,7 @@ Asset recorded:
   or "depreciate" to spread over 5 years.
 ```
 
-Save to `~/.openclaw/data/kiwi-receipts/assets.json`.
+Save the long-lived asset to `{business_dir}/ledger/registers/assets-master.json`. Write yearly depreciation calculations to `{business_dir}/ledger/tax-years/YYYY-YYYY/depreciation.json`.
 
 ### "asset list"
 Show all assets with current book value:
@@ -440,7 +611,7 @@ depreciation = full_year_depreciation * partial_rate
 
 Calculate provisional tax based on tax history:
 
-1. Read `tax-history.json` for previous year's residual income tax (RIT)
+1. Read annual tax-year files for previous year's residual income tax (RIT), especially `ledger/tax-years/YYYY-YYYY/income-tax.json` and `provisional-tax.json`
 2. If RIT <= $5,000: "You don't need to pay provisional tax (RIT under $5,000)"
 3. If RIT > $5,000:
 
@@ -466,7 +637,7 @@ Bot: Saved. Previous year RIT: $8,409.00
      Provisional tax this year: $8,829.45 ($2,943.15 x 3 instalments)
 ```
 
-Save to `tax-history.json`.
+Save to `{business_dir}/ledger/tax-years/YYYY-YYYY/provisional-tax.json`.
 
 ## Annual Income Tax (IR3)
 
@@ -523,11 +694,8 @@ Generate XLSX with annual sheets added. Run:
 
 ```bash
 python3 {baseDir}/scripts/generate_report.py \
-  --data ~/.openclaw/data/kiwi-receipts/receipts.json \
-  --income ~/.openclaw/data/kiwi-receipts/income.json \
-  --assets ~/.openclaw/data/kiwi-receipts/assets.json \
-  --tax-history ~/.openclaw/data/kiwi-receipts/tax-history.json \
-  --output /tmp/annual-tax-report.xlsx \
+  --business-dir "$BUSINESS_DIR" \
+  --output "$BUSINESS_DIR/outputs/ird/ir3/annual-tax-report.xlsx" \
   --period all \
   --business-name "from config.json" \
   --gst-number "from config.json"
@@ -537,43 +705,58 @@ python3 {baseDir}/scripts/generate_report.py \
 
 ### "xero export"
 
-Generate a CSV file importable into Xero as bank transactions:
+Generate a standard CSV file importable into Xero as bank statement transactions:
 
 ```bash
 python3 {baseDir}/scripts/generate_report.py \
-  --data ~/.openclaw/data/kiwi-receipts/receipts.json \
-  --income ~/.openclaw/data/kiwi-receipts/income.json \
-  --output /tmp/xero-export.csv \
+  --business-dir "$BUSINESS_DIR" \
+  --output "$BUSINESS_DIR/outputs/xero/standard/xero-bank-statement.csv" \
   --format xero-csv \
   --period current
 ```
 
-**Xero CSV format:**
+Prefer monthly bank transaction files as the source when bank statements have been imported. Fall back to monthly receipts/income only when no bank lines exist for the period.
+
+**Standard Xero CSV format:**
 
 ```csv
-Date,Amount,Payee,Description,Reference,Category
-15/03/2026,-174.00,Bunnings Warehouse,"Timber 2x4 x10, Concrete Mix x5",,Cost of Goods Sold - Materials
-16/03/2026,-65.00,Z Energy,Fuel,,Motor Vehicle Expenses - Fuel
-17/03/2026,9775.00,ABC Homes Ltd,Bathroom renovation - INV-2026-015,,Sales
+Date,Amount,Payee,Description,Reference
+15/03/2026,-174.00,Bunnings Warehouse,"Timber 2x4 x10, Concrete Mix x5",receipt-uuid
+16/03/2026,-65.00,Z Energy,Fuel,receipt-uuid
+17/03/2026,9775.00,ABC Homes Ltd,Bathroom renovation - INV-2026-015,INV-2026-015
 ```
 
 - Receipts as negative amounts (purchases)
 - Income as positive amounts (sales)
 - Dates in DD/MM/YYYY format (Xero NZ standard)
+- Amounts are plain numbers: no `$`, commas, or CR/DR suffixes
 
-**Category to Xero account mapping:**
+### "xero precoded export"
 
-| Kiwi Receipts Category | Xero Account Name |
-|------------------------|-------------------|
-| materials | Cost of Goods Sold - Materials |
-| tools | Tools and Equipment |
-| fuel | Motor Vehicle Expenses - Fuel |
-| vehicle | Motor Vehicle Expenses |
-| safety | Health and Safety |
-| subcontractor | Subcontractor Expenses |
-| office | Office Expenses |
-| other | General Expenses |
-| (income) | Sales |
+Generate a precoded bank statement CSV that includes Xero account and tax coding columns:
+
+```bash
+python3 {baseDir}/scripts/generate_report.py \
+  --business-dir "$BUSINESS_DIR" \
+  --xero-map "$BUSINESS_DIR/mappings/xero-account-map.json" \
+  --output "$BUSINESS_DIR/outputs/xero/precoded/xero-precoded-bank-statement.csv" \
+  --format xero-precoded-csv \
+  --period current
+```
+
+**Precoded CSV format:**
+
+```csv
+Date,Amount,Payee,Description,Reference,AccountCode,TaxType,ContactName
+15/03/2026,-174.00,Bunnings Warehouse,"Timber 2x4 x10, Concrete Mix x5",receipt-uuid,310,15% GST on Expenses,Bunnings Warehouse
+17/03/2026,9775.00,ABC Homes Ltd,Bathroom renovation - INV-2026-015,INV-2026-015,200,15% GST on Income,ABC Homes Ltd
+```
+
+Rules:
+- Require `mappings/xero-account-map.json` before producing this file.
+- Validate every row has `AccountCode` and `TaxType`. If any category is unmapped, stop and ask the user to fill the mapping.
+- `TaxType` should use the exact tax rate display name from the user's Xero organisation, for example NZ defaults such as `15% GST on Expenses`, `15% GST on Income`, or `No GST`.
+- `ContactName` should be the supplier/client name. Xero may create a new contact if it does not match an existing one.
 
 User imports into Xero: Accounting > Bank Accounts > [Account] > Import Statement.
 
