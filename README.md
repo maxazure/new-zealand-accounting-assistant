@@ -45,13 +45,17 @@ New Zealand Accounting Assistant can help generate:
 
 - Monthly income and expense summaries
 - Lists of unmatched or unclear bank transactions
+- Month-end close checklists and accountant review packs
+- Reconciling item ageing for unresolved bank/source differences
+- Draft adjustment or journal-entry workpapers for review
+- Material variance notes compared with earlier periods
 - Receipt and invoice ledgers
 - Xero bank statement CSV exports
 - Xero precoded CSV exports with account code, tax type, and contact name
+- Xero chart-of-accounts mapping guidance for New Zealand small businesses
 - GST return worksheets for GST-registered businesses
 - Income tax / IR3 workpapers
 - Asset and depreciation schedules
-- Accountant review packs
 
 If the business is **not registered for GST**, New Zealand Accounting Assistant records GST shown on receipts as evidence only. It does not claim GST, does not generate GST return figures, and uses `No GST` or the user's equivalent Xero tax rate for exports.
 
@@ -93,6 +97,7 @@ New Zealand Accounting Assistant is built around evidence, not guessing.
 - Normalized records are stored in monthly JSON ledger files.
 - Ambiguous matches stay visible until a person confirms them.
 - Xero account codes and tax rate names must come from the business, accountant, or Xero configuration. The skill should not invent them.
+- Xero chart-of-accounts mappings should be based on the entity's exported Xero chart or accountant-approved mapping, not on assumed default codes.
 - GST handling depends on whether the business is GST registered.
 
 ## First Setup
@@ -241,6 +246,10 @@ Assistant: Annual Tax Summary: 2025-2026
 - Multiple clients and multiple legal/tax entities under one local workspace
 - Bank statement import from CSV/XLSX/PDF-derived data
 - Bank reconciliation against receipts and income
+- Month-end close workflow with review checklists
+- Reconciling item categories, ageing, and follow-up status
+- Draft journal-entry and adjustment workpapers
+- Variance flags for unusual income or expense movements
 - Monthly financial summaries
 - GST-aware and non-GST workflows
 - IRD GST worksheet support for GST-registered businesses
@@ -341,6 +350,10 @@ cp -r new-zealand-accounting-assistant ~/.openclaw/workspace/skills/new-zealand-
 |---------|-------------|
 | `report` | Generate a period report XLSX |
 | `report 2026-03` | Generate report for a specific period |
+| `close 2026-03` | Run month-end checklist and show blockers |
+| `review pack 2026-03` | Prepare accountant review pack |
+| `variance 2026-03` | Flag unusual movements versus prior periods |
+| `journal entries 2026-03` | Show draft adjustments for review |
 | `ir3` or `tax return` | Annual income tax summary |
 | `export ir3` | Annual XLSX report |
 | `provisional` | Calculate provisional tax instalments |
@@ -394,7 +407,10 @@ All accounting data is stored locally by default:
         │   │       ├── income.json
         │   │       ├── bank-transactions.json
         │   │       ├── matches.json
+        │   │       ├── reconciling-items.json
         │   │       ├── adjustments.json
+        │   │       ├── journal-entries.json
+        │   │       ├── review-checklist.json
         │   │       └── period-summary.json
         │   ├── tax-years/
         │   │   └── YYYY-YYYY/
@@ -412,8 +428,17 @@ All accounting data is stored locally by default:
         ├── mappings/
         │   ├── categories.json
         │   └── xero-account-map.json
-        ├── working/reconciliations/
+        ├── working/
+        │   ├── reconciliations/
+        │   ├── month-end-close/
+        │   ├── workpapers/
+        │   └── journal-entries/
         ├── outputs/
+        │   ├── monthly/
+        │   ├── ird/
+        │   ├── xero/
+        │   └── accountant/
+        │       └── review-packs/
         └── archive/
 ```
 
@@ -424,6 +449,10 @@ New Zealand Accounting Assistant uses JSON, but not one large file. Monthly reco
 The root-level `registry/` and `clients/` folders group many entities for one operator, such as an owner with several companies or an accountant with several clients. The actual ledgers still live under separate `businesses/{entity-slug}/` folders.
 
 See [`ledger-file-format.md`](references/ledger-file-format.md) for field definitions, including `gst_registered`, `gst_claimable`, `claim_status`, and non-GST handling.
+
+See [`xero-chart-of-accounts.md`](references/xero-chart-of-accounts.md) for Xero chart import columns, account types, NZ GST tax-rate defaults, and a compact NZ small-business mapping baseline.
+
+See [`month-end-workpapers.md`](references/month-end-workpapers.md) for the close checklist, reconciling item categories, draft journal-entry rules, variance triggers, and accountant review pack contents.
 
 ## Technical Notes
 
@@ -470,9 +499,11 @@ new-zealand-accounting-assistant/
 │   └── generate_report.py            # XLSX/CSV report generator
 └── references/
     ├── ledger-file-format.md          # Sharded ledger schema
+    ├── month-end-workpapers.md         # Close/reconciliation/review-pack workflow
     ├── nz-gst-guide.md               # GST compliance reference
     ├── nz-income-tax-guide.md         # Income tax reference
     ├── nz-depreciation-rates.md       # Depreciation rates reference
+    ├── xero-chart-of-accounts.md      # Xero COA format, types, and NZ mapping guidance
     └── xero-import-and-ird-filing.md  # Xero/IRD filing research reference
 ```
 

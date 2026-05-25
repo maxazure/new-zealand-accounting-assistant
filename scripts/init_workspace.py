@@ -28,12 +28,16 @@ BUSINESS_DIRS = [
     "ledger/indexes",
     "mappings",
     "working/reconciliations",
+    "working/month-end-close",
+    "working/workpapers",
+    "working/journal-entries",
     "outputs/monthly",
     "outputs/ird/gst",
     "outputs/ird/ir3",
     "outputs/xero/standard",
     "outputs/xero/precoded",
     "outputs/accountant",
+    "outputs/accountant/review-packs",
     "archive",
 ]
 
@@ -51,7 +55,10 @@ PERIOD_FILES = {
     "income.json": [],
     "bank-transactions.json": [],
     "matches.json": [],
+    "reconciling-items.json": [],
     "adjustments.json": [],
+    "journal-entries.json": [],
+    "review-checklist.json": {},
     "period-summary.json": {},
 }
 
@@ -76,6 +83,10 @@ REGISTER_FILES = {
 MAPPING_FILES = {
     "mappings/categories.json": {},
     "mappings/xero-account-map.json": {
+        "chart_of_accounts": {
+            "source": "not_configured",
+            "requires_entity_xero_export_or_accountant_confirmation": True,
+        },
         "defaults": {
             "expense_tax_type": "No GST",
             "income_tax_type": "No GST",
@@ -338,6 +349,10 @@ def main():
     mapping_files = dict(MAPPING_FILES)
     if args.gst_registered:
         mapping_files["mappings/xero-account-map.json"] = {
+            "chart_of_accounts": {
+                "source": "not_configured",
+                "requires_entity_xero_export_or_accountant_confirmation": True,
+            },
             "defaults": {
                 "expense_tax_type": "15% GST on Expenses",
                 "income_tax_type": "15% GST on Income",

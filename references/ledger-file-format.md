@@ -57,7 +57,10 @@ Registry files are JSON objects keyed by slug. They are routing and discovery me
 │   │       ├── income.json
 │   │       ├── bank-transactions.json
 │   │       ├── matches.json
+│   │       ├── reconciling-items.json
 │   │       ├── adjustments.json
+│   │       ├── journal-entries.json
+│   │       ├── review-checklist.json
 │   │       └── period-summary.json
 │   ├── tax-years/
 │   │   └── YYYY-YYYY/
@@ -75,8 +78,38 @@ Registry files are JSON objects keyed by slug. They are routing and discovery me
 ├── mappings/
 │   ├── categories.json
 │   └── xero-account-map.json
+├── working/
+│   ├── reconciliations/
+│   ├── month-end-close/
+│   ├── workpapers/
+│   └── journal-entries/
 └── outputs/
+    └── accountant/review-packs/
 ```
+
+## Mapping Files
+
+### mappings/xero-account-map.json
+
+Per-entity Xero mapping file. Account codes and tax-rate names must come from that entity's exported Xero chart of accounts, an accounting-system connector, or explicit accountant/user confirmation.
+
+```json
+{
+  "chart_of_accounts": {
+    "source": "not_configured",
+    "requires_entity_xero_export_or_accountant_confirmation": true
+  },
+  "defaults": {
+    "expense_tax_type": "No GST",
+    "income_tax_type": "No GST",
+    "no_gst_tax_type": "No GST"
+  },
+  "income": {},
+  "categories": {}
+}
+```
+
+See `references/xero-chart-of-accounts.md` before changing this schema or proposing default category mappings.
 
 ## Config Fields
 
@@ -264,6 +297,36 @@ Array of accepted or suggested reconciliation links:
 ]
 ```
 
+### reconciling-items.json
+
+Array of unresolved differences identified during reconciliation:
+
+```json
+[
+  {
+    "id": "recitem_20260331_001",
+    "period": "2026-03",
+    "date_originated": "2026-03-29",
+    "item_type": "needs_investigation",
+    "source": "bank",
+    "bank_transaction_id": "bank_20260329_004",
+    "description": "Unknown card purchase",
+    "amount": -86.4,
+    "age_days": 2,
+    "status": "open",
+    "owner": "client",
+    "expected_resolution": "Ask owner for receipt or private-use confirmation",
+    "created_at": "2026-03-31T18:00:00Z",
+    "updated_at": "2026-03-31T18:00:00Z"
+  }
+]
+```
+
+Allowed `item_type` values:
+- `timing_difference`: expected to clear without a tax/accounting adjustment
+- `adjustment_required`: likely needs an adjustment or draft journal entry
+- `needs_investigation`: cannot be explained yet
+
 ### adjustments.json
 
 Manual accounting/tax adjustments for the month:
@@ -283,6 +346,76 @@ Manual accounting/tax adjustments for the month:
 ]
 ```
 
+### journal-entries.json
+
+Draft double-entry adjustments for accountant or owner review. Do not mark as posted unless the user confirms posting outside this skill or a verified accounting-system connector confirms it.
+
+```json
+[
+  {
+    "id": "je_20260331_001",
+    "period": "2026-03",
+    "entry_type": "bank_fee_adjustment",
+    "description": "Record unclassified bank fee",
+    "source_references": ["bank_20260329_004"],
+    "lines": [
+      {
+        "account_code": "404",
+        "account_name": "Bank Fees",
+        "debit": 12.5,
+        "credit": 0.0,
+        "tax_type": "No GST",
+        "memo": "Monthly bank fee"
+      },
+      {
+        "account_code": "090",
+        "account_name": "Business Bank Account",
+        "debit": 0.0,
+        "credit": 12.5,
+        "tax_type": "No GST",
+        "memo": "Monthly bank fee"
+      }
+    ],
+    "balanced": true,
+    "status": "draft_review_required",
+    "prepared_by": "operator",
+    "review_required": true,
+    "created_at": "2026-03-31T18:10:00Z"
+  }
+]
+```
+
+### review-checklist.json
+
+Month-end close and review status for the period:
+
+```json
+{
+  "period": "2026-03",
+  "status": "in_progress",
+  "prepared_by": "operator",
+  "reviewer": null,
+  "tasks": [
+    {
+      "id": "source_files_indexed",
+      "label": "Source files indexed",
+      "status": "complete",
+      "completed_at": "2026-03-31T18:00:00Z"
+    },
+    {
+      "id": "unresolved_items_reviewed",
+      "label": "Unresolved reconciling items reviewed",
+      "status": "open"
+    }
+  ],
+  "signoff": {
+    "prepared_at": null,
+    "reviewed_at": null,
+    "disclaimer_acknowledged": false
+  }
+}
+```
+
 ### period-summary.json
 
 Derived summary. It can be regenerated and should not be the only source of truth.
@@ -300,7 +433,10 @@ Derived summary. It can be regenerated and should not be the only source of trut
   "gst_output_tax": 0.0,
   "gst_input_tax_claimable": 0.0,
   "unmatched_bank_lines": 3,
-  "needs_review": 2
+  "needs_review": 2,
+  "draft_journal_entries": 1,
+  "material_variances": 2,
+  "review_status": "in_progress"
 }
 ```
 
@@ -322,4 +458,4 @@ Keep `ledger/registers/assets-master.json` as the long-lived asset register, and
 - Legacy flat files such as `ledger/receipts.json` may be copied into period folders during migration, but do not continue appending to them.
 - New write operations must target period or tax-year files.
 - Reports can read a date range by loading only the required monthly folders.
-- If a month is locked, do not edit its files directly. Write corrections into a later period's `adjustments.json` unless the user explicitly unlocks the period.
+- If a month is locked, do not edit its files directly. Write corrections into a later period's `adjustments.json` or `journal-entries.json` unless the user explicitly unlocks the period.

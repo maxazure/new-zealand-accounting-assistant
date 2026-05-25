@@ -1,6 +1,6 @@
 ---
 name: new-zealand-accounting-assistant
-description: "Free public, open-source New Zealand bookkeeping and tax-preparation assistant for small businesses and sole traders. Initialize a local KiwiBooks workspace for one operator with multiple clients and multiple legal/tax entities, capture receipts, income, bank statements, and bookkeeping notes, reconcile bank lines with records, generate monthly finance summaries, IRD-ready GST/IR3 XLSX reports, and Xero standard or precoded bank statement CSV exports. This skill is not professional accounting or tax advice and must tell users to have a qualified New Zealand accountant review records and filings. Use when: (1) user sends a receipt, invoice, bank statement, or bookkeeping note, (2) user asks about GST, income tax, monthly accounts, reconciliation, or tax returns, (3) user wants to export receipts, generate reports, or create Xero imports, (4) user mentions New Zealand accounting, NZ accounting, IRD, GST, IR3, Xero, precoded CSV, provisional tax, depreciation, income, expense, bank matching, multiple companies, clients, or accounting firm workflows."
+description: "Free public, open-source New Zealand bookkeeping and tax-preparation assistant for small businesses and sole traders. Initialize a local KiwiBooks workspace for one operator with multiple clients and multiple legal/tax entities, capture receipts, income, bank statements, and bookkeeping notes, reconcile bank lines with records, generate monthly finance summaries, month-end workpapers, accountant review packs, IRD-ready GST/IR3 XLSX reports, and Xero standard or precoded bank statement CSV exports. This skill is not professional accounting or tax advice and must tell users to have a qualified New Zealand accountant review records and filings. Use when: (1) user sends a receipt, invoice, bank statement, or bookkeeping note, (2) user asks about GST, income tax, monthly accounts, reconciliation, close, variance, review packs, or tax returns, (3) user wants to export receipts, generate reports, or create Xero imports, (4) user mentions New Zealand accounting, NZ accounting, IRD, GST, IR3, Xero, precoded CSV, provisional tax, depreciation, income, expense, bank matching, multiple companies, clients, or accounting firm workflows."
 metadata:
   {
     "openclaw":
@@ -25,6 +25,7 @@ Do not start bookkeeping work until the workspace readiness check has passed and
 
 When changing or relying on ledger storage, read `references/ledger-file-format.md` first.
 When changing or relying on Xero import behavior, IRD filing behavior, or New Zealand record-keeping rules, read `references/xero-import-and-ird-filing.md` first.
+When changing or relying on Xero chart-of-accounts mappings, account types, account-code defaults, or tax-rate defaults, read `references/xero-chart-of-accounts.md` first.
 
 ## Workspace Model
 
@@ -71,7 +72,10 @@ Expected root structure:
         │   │       ├── income.json
         │   │       ├── bank-transactions.json
         │   │       ├── matches.json
+        │   │       ├── reconciling-items.json
         │   │       ├── adjustments.json
+        │   │       ├── journal-entries.json
+        │   │       ├── review-checklist.json
         │   │       └── period-summary.json
         │   ├── tax-years/
         │   │   └── YYYY-YYYY/
@@ -90,7 +94,10 @@ Expected root structure:
         │   ├── categories.json
         │   └── xero-account-map.json
         ├── working/
-        │   └── reconciliations/
+        │   ├── reconciliations/
+        │   ├── month-end-close/
+        │   ├── workpapers/
+        │   └── journal-entries/
         ├── outputs/
         │   ├── monthly/
         │   ├── ird/
@@ -100,6 +107,7 @@ Expected root structure:
         │   │   ├── standard/
         │   │   └── precoded/
         │   └── accountant/
+        │       └── review-packs/
         └── archive/
 ```
 
@@ -235,7 +243,10 @@ ledger/periods/YYYY-MM/receipts.json             []
 ledger/periods/YYYY-MM/income.json               []
 ledger/periods/YYYY-MM/bank-transactions.json    []
 ledger/periods/YYYY-MM/matches.json              []
+ledger/periods/YYYY-MM/reconciling-items.json    []
 ledger/periods/YYYY-MM/adjustments.json          []
+ledger/periods/YYYY-MM/journal-entries.json      []
+ledger/periods/YYYY-MM/review-checklist.json     {}
 ledger/periods/YYYY-MM/period-summary.json       {}
 ledger/tax-years/YYYY-YYYY/assets.json           []
 ledger/tax-years/YYYY-YYYY/depreciation.json     []
@@ -247,7 +258,7 @@ ledger/registers/assets-master.json              []
 ledger/registers/bank-accounts.json              []
 ledger/indexes/document-index.json               []
 mappings/categories.json                         {}
-mappings/xero-account-map.json                   {"categories": {}, "income": {}, "defaults": {}}
+mappings/xero-account-map.json                   {"chart_of_accounts": {}, "categories": {}, "income": {}, "defaults": {}}
 ```
 
 If legacy files exist in `~/.openclaw/data/kiwi-receipts/`, offer to copy them into the selected business ledger and leave the legacy originals untouched. Never move or overwrite legacy files without explicit user confirmation.
@@ -261,8 +272,10 @@ New Zealand Accounting Assistant works in four steps:
 1. Select the correct client/entity, then collect source records: receipts, income/invoices, bank statements, and notes.
 2. Normalize them into that entity's local ledger folder.
 3. Match bank statement lines to receipts and income by date, amount, merchant/client, and references.
-4. Generate outputs: monthly finance summary, IRD GST/IR3 workbooks, and Xero bank statement CSVs. For Xero precoded CSVs, we need your Xero account-code and tax-rate mapping first.
+4. Generate outputs: monthly finance summary, unresolved item list, accountant review pack, IRD GST/IR3 workbooks, and Xero bank statement CSVs. For Xero precoded CSVs, we need your Xero account-code and tax-rate mapping first.
 ```
+
+For Xero account-code mapping, ask for the entity's exported Xero chart of accounts or accountant-approved mapping. Do not rely on Xero default account codes, because each Xero organisation can customise or import its own chart.
 
 Keep the explanation short and then ask for the next source file or command.
 
@@ -275,7 +288,19 @@ The source of truth is JSON, but it is sharded by period:
 - Long-lived registers go in `ledger/registers/`.
 - Mappings go in `mappings/`.
 
-Before writing or changing any ledger file, read `references/ledger-file-format.md`. New records must not be appended to old root-level files like `ledger/receipts.json`; those are legacy migration inputs only.
+Before writing or changing any ledger file, read `references/ledger-file-format.md`. Before proposing or validating Xero account codes or tax-rate names, read `references/xero-chart-of-accounts.md`. New records must not be appended to old root-level files like `ledger/receipts.json`; those are legacy migration inputs only.
+
+## Month-End Controls and Review Packs
+
+When the user asks for month-end close, accountant review, variance analysis, draft adjustments, journal entries, reconciliation exceptions, sign-off, or audit/supporting workpapers, read `references/month-end-workpapers.md` first.
+
+Apply these quality gates before report/export completion:
+
+- Every report/export must list unresolved reconciling items by type: timing difference, adjustment required, or needs investigation.
+- Draft adjustments or journal entries must include source evidence, calculation basis, account/tax mapping, preparer, status, and reviewer requirement. Do not present them as posted.
+- Material variances should be flagged using the entity's configured thresholds, or conservative defaults if none are configured.
+- Accountant review packs must include a period checklist, source file index, reconciliation summary, unresolved items, draft adjustments, variance notes, and the professional-review disclaimer.
+- If a period is locked, write corrections to a later `adjustments.json` or `journal-entries.json`; do not rewrite source records without explicit unlock confirmation.
 
 ## Handling Receipt Photos
 
@@ -469,6 +494,18 @@ Generate report for a specific GST period (the 2-month period containing that mo
 7. **Depreciation** -- Asset depreciation schedule from tax-year files
 8. **IR3 Annual Tax** -- Annual income tax summary (when period=all or period=annual)
 
+### "close YYYY-MM"
+Read `references/month-end-workpapers.md`, update `review-checklist.json`, and show completed tasks, blockers, unresolved reconciling items, missing source files, and review-required items. Do not mark a period complete while open `needs_investigation` or unreviewed `adjustment_required` items remain.
+
+### "review pack YYYY-MM"
+Read `references/month-end-workpapers.md` and prepare an accountant review pack under `outputs/accountant/review-packs/`. Include the professional-review disclaimer, source file index, reconciliation summary, unresolved items, draft journal entries, variance notes, and export previews where relevant.
+
+### "variance YYYY-MM"
+Read `references/month-end-workpapers.md` and compare the selected period to prior month and prior-year month when data exists. Flag only material movements, explain known drivers from evidence, and mark unknown drivers for follow-up.
+
+### "journal entries YYYY-MM"
+List draft entries from `journal-entries.json` and adjustment candidates from `reconciling-items.json`. Verify every draft entry balances and has evidence before showing it as review-ready.
+
 **GST101A auto-fill logic:**
 
 If monthly income files have data for the period, BOTH sides are auto-filled:
@@ -514,6 +551,10 @@ RECEIPTS:
   "summary"        Current GST period overview
   "report"         Download GST report (XLSX)
   "report 2026-03" Report for specific period
+  "close 2026-03"  Run month-end checklist and show blockers
+  "review pack 2026-03" Prepare accountant review pack
+  "variance 2026-03" Flag unusual movements vs prior periods
+  "journal entries 2026-03" Show draft adjustments for review
   "list"           Show recent receipts
   "delete last"    Remove last receipt
 
@@ -830,6 +871,8 @@ Rules:
 - Require `mappings/xero-account-map.json` before producing this file.
 - Validate every row has `AccountCode` and `TaxType`. If any category is unmapped, stop and ask the user to fill the mapping.
 - `TaxType` should use the exact tax rate display name from the user's Xero organisation, for example NZ defaults such as `15% GST on Expenses`, `15% GST on Income`, or `No GST`.
+- `AccountCode` must come from the user's Xero chart of accounts export, an accounting-system connector, or explicit user/accountant confirmation.
+- Validate account type fit where known: income should map to Sales/Revenue/Other Income accounts; ordinary expenses to Expense/Overhead/Direct Costs; assets to Fixed Asset or Current Asset; private-use items to Equity or shareholder/current liability accounts.
 - `ContactName` should be the supplier/client name. Xero may create a new contact if it does not match an existing one.
 
 User imports into Xero: Accounting > Bank Accounts > [Account] > Import Statement.
