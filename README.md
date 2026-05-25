@@ -222,8 +222,8 @@ Assistant: Annual Tax Summary: 2025-2026
 Clone or copy this repository into a local working folder and ask Codex or Claude Code to use the skill instructions in `SKILL.md`.
 
 ```bash
-git clone https://github.com/maxazure/kiwi-receipts.git
-cd kiwi-receipts
+git clone https://github.com/maxazure/new-zealand-accounting-assistant.git
+cd new-zealand-accounting-assistant
 ```
 
 For XLSX report generation, install `openpyxl`:
@@ -252,13 +252,13 @@ clawhub install kiwi-receipts
 Or install manually:
 
 ```bash
-git clone https://github.com/maxazure/kiwi-receipts.git ~/.openclaw/skills/kiwi-receipts
+git clone https://github.com/maxazure/new-zealand-accounting-assistant.git ~/.openclaw/skills/new-zealand-accounting-assistant
 ```
 
 You can also copy the repository into a workspace skill directory:
 
 ```bash
-cp -r kiwi-receipts ~/.openclaw/workspace/skills/kiwi-receipts
+cp -r new-zealand-accounting-assistant ~/.openclaw/workspace/skills/new-zealand-accounting-assistant
 ```
 
 ## Commands
@@ -412,7 +412,7 @@ python3 scripts/generate_report.py \
 ### File Structure
 
 ```text
-kiwi-receipts/
+new-zealand-accounting-assistant/
 ├── SKILL.md                          # Agent skill instructions
 ├── README.md                         # This file
 ├── scripts/
