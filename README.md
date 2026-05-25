@@ -1,6 +1,6 @@
 # New Zealand Accounting Assistant
 
-New Zealand Accounting Assistant is a free, public, open-source AI bookkeeping skill for New Zealand small businesses. It helps owners collect receipts, record income, import bank statements, match transactions, and prepare the monthly/annual numbers needed for Xero, IRD, or an accountant.
+New Zealand Accounting Assistant is a free, public, open-source AI bookkeeping skill for New Zealand small businesses. It helps owners, directors, bookkeepers, and accountants collect receipts, record income, import bank statements, match transactions, and prepare the monthly/annual numbers needed for Xero, IRD, or an accountant.
 
 It is designed to be run with **Codex** or **Claude Code**. It can also be installed as an **OpenClaw** skill.
 
@@ -13,13 +13,15 @@ This project is not for sale and should not be presented as a paid accounting pr
 For a business owner, the workflow is simple:
 
 1. Send receipt photos, supplier invoices, income notes, or bank statement files.
-2. New Zealand Accounting Assistant stores them in a local business folder.
+2. New Zealand Accounting Assistant stores them under the correct client and legal/tax entity.
 3. It reads the details: dates, amounts, suppliers, customers, descriptions, GST shown, and categories.
 4. It matches receipts and income records against bank statement lines.
 5. It shows what is matched, what is missing, and what needs review.
 6. It creates useful monthly and annual outputs.
 
 The goal is to reduce the usual end-of-month mess: missing receipts, unclear bank lines, uncoded transactions, and manual spreadsheet work.
+
+It is designed for more than one company. A person can keep separate books for several companies they own, and an accountant or bookkeeper can keep separate local workspaces for multiple clients. Each company, sole trader, trust, partnership, or other entity gets its own ledger folder so records are not mixed.
 
 ## What It Can Produce
 
@@ -85,15 +87,26 @@ On first use, New Zealand Accounting Assistant creates a local bookkeeping works
 ~/KiwiBooks
 ```
 
-Each business gets its own folder:
+Each legal/tax entity gets its own ledger folder:
 
 ```text
-~/KiwiBooks/businesses/{business-slug}/
+~/KiwiBooks/businesses/{entity-slug}/
 ```
+
+The setup model has three layers:
+
+- Operator: the person or firm using the skill, such as a business owner, director, accountant, or bookkeeper.
+- Client or owner group: the customer, family group, holding group, or owner whose entities are being managed.
+- Entity: the actual company, sole trader, trust, partnership, non-profit, or other legal/tax entity being reconciled and reported.
+
+If there is more than one entity, the assistant must confirm the active entity before saving receipts, importing bank statements, reconciling, or generating reports.
 
 During setup it asks for practical business details:
 
+- Operator role: owner, director, accountant, bookkeeper, or administrator
+- Client or owner group name
 - Business name
+- Legal/tax entity type
 - Whether the business is GST registered
 - GST number and GST filing settings, if registered
 - Balance date
@@ -105,6 +118,10 @@ Example:
 ```text
 You: setup
 Assistant: I will use ~/KiwiBooks as the bookkeeping root unless you want another folder.
+Assistant: Are you doing books for your own business, multiple businesses you control, or clients of an accounting/bookkeeping firm?
+You: multiple businesses I control
+Assistant: What owner group should I use?
+You: Jay Zhang Owner Group
 Assistant: What is your business name?
 You: My Construction Ltd
 Assistant: Is the business registered for GST?
@@ -112,6 +129,8 @@ You: no
 Assistant: Vehicle business use percentage? (default 80)
 You: 80
 Assistant: Workspace ready at ~/KiwiBooks/businesses/my-construction-ltd.
+           Client/owner group: Jay Zhang Owner Group
+           Active entity: My Construction Ltd
            GST mode: not registered, so GST observed on receipts is stored as evidence but not claimed.
 ```
 
@@ -203,6 +222,7 @@ Assistant: Annual Tax Summary: 2025-2026
 
 - Receipt photo capture and extraction
 - Income and invoice tracking
+- Multiple clients and multiple legal/tax entities under one local workspace
 - Bank statement import from CSV/XLSX/PDF-derived data
 - Bank reconciliation against receipts and income
 - Monthly financial summaries
@@ -268,6 +288,9 @@ cp -r new-zealand-accounting-assistant ~/.openclaw/workspace/skills/new-zealand-
 | Command | Description |
 |---------|-------------|
 | `setup` | Configure the business workspace |
+| `clients` | List clients or owner groups |
+| `entities` | List legal/tax entities |
+| `use my-company-ltd` | Set the active entity before capture/import/report |
 | `help` | Show available commands |
 
 ### Receipts
@@ -329,14 +352,23 @@ All accounting data is stored locally by default:
 
 ```text
 ~/.openclaw/data/kiwi-receipts/
-└── config.json                         # Pointer to KiwiBooks root and active business
+└── config.json                         # Pointer to KiwiBooks root and active client/entity
 
 ~/KiwiBooks/
+├── registry/
+│   ├── operators.json                # People/firms using the skill
+│   ├── clients.json                  # Clients or owner groups
+│   ├── entities.json                 # Legal/tax entities and ledger paths
+│   └── assignments.json              # Operator-client-entity relationships
+├── clients/
+│   └── {client-or-owner-slug}/
+│       ├── client.json
+│       └── entity-links.json
 ├── shared/
 │   ├── chart-of-accounts/
 │   └── templates/
 └── businesses/
-    └── {business-slug}/
+    └── {entity-slug}/
         ├── config.json                 # Business name, GST status, tax settings
         ├── inbox/                      # Original receipts, income files, bank statements, notes
         ├── ledger/
@@ -373,13 +405,15 @@ Some compatibility paths still use the older `kiwi-receipts` or `KiwiBooks` name
 
 New Zealand Accounting Assistant uses JSON, but not one large file. Monthly records are split into `ledger/periods/YYYY-MM/`; annual tax records are split into `ledger/tax-years/YYYY-YYYY/`; long-lived reference data goes into `ledger/registers/`.
 
+The root-level `registry/` and `clients/` folders group many entities for one operator, such as an owner with several companies or an accountant with several clients. The actual ledgers still live under separate `businesses/{entity-slug}/` folders.
+
 See [`ledger-file-format.md`](references/ledger-file-format.md) for field definitions, including `gst_registered`, `gst_claimable`, `claim_status`, and non-GST handling.
 
 ## Technical Notes
 
 ### Report Script
 
-Generate a report from a business folder:
+Generate a report from an entity folder:
 
 ```bash
 python3 scripts/generate_report.py \

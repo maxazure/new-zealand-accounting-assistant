@@ -12,6 +12,14 @@ DEFAULT_ROOT = "~/KiwiBooks"
 GLOBAL_CONFIG = "~/.openclaw/data/kiwi-receipts/config.json"
 
 
+ROOT_DIRS = [
+    "registry",
+    "clients",
+    "shared/chart-of-accounts",
+    "shared/templates",
+]
+
+
 BUSINESS_DIRS = [
     "inbox",
     "ledger/periods",
@@ -28,6 +36,14 @@ BUSINESS_DIRS = [
     "outputs/accountant",
     "archive",
 ]
+
+
+REGISTRY_FILES = {
+    "registry/operators.json": {},
+    "registry/clients.json": {},
+    "registry/entities.json": {},
+    "registry/assignments.json": {},
+}
 
 
 PERIOD_FILES = {
@@ -71,9 +87,9 @@ MAPPING_FILES = {
 }
 
 
-def slugify(value: str) -> str:
+def slugify(value: str, fallback: str = "business") -> str:
     slug = re.sub(r"[^a-z0-9]+", "-", value.lower()).strip("-")
-    return slug or "business"
+    return slug or fallback
 
 
 def period_from_date(value: date) -> str:
@@ -106,11 +122,45 @@ def write_json_if_missing(path: Path, data) -> bool:
     return True
 
 
+def update_registry_file(root: Path, rel: str, key: str, value: dict) -> Path:
+    path = root / rel
+    registry = read_json(path, {})
+    existing = registry.get(key, {})
+    existing.update(value)
+    registry[key] = existing
+    write_json(path, registry)
+    return path
+
+
 def main():
     parser = argparse.ArgumentParser(description="Initialize a New Zealand Accounting Assistant workspace")
     parser.add_argument("--root", default=DEFAULT_ROOT, help="Bookkeeping root directory")
     parser.add_argument("--business-name", required=True, help="Business name")
     parser.add_argument("--slug", default=None, help="Business slug")
+    parser.add_argument("--operator-name", default="Local User", help="Person using the skill")
+    parser.add_argument(
+        "--operator-role",
+        default="owner",
+        choices=["owner", "director", "accountant", "bookkeeper", "administrator"],
+        help="Relationship of the operator to this workspace",
+    )
+    parser.add_argument("--client-name", default=None, help="Client or owner group name")
+    parser.add_argument("--client-slug", default=None, help="Client or owner group slug")
+    parser.add_argument(
+        "--entity-type",
+        default="company",
+        choices=["company", "sole_trader", "partnership", "trust", "non_profit", "other"],
+        help="Legal/tax entity type",
+    )
+    parser.add_argument(
+        "--entity-role",
+        default=None,
+        choices=["owned_entity", "client_entity", "managed_entity"],
+        help="How this entity relates to the operator/client",
+    )
+    parser.add_argument("--trading-name", default=None, help="Trading name if different from legal name")
+    parser.add_argument("--nzbn", default="", help="New Zealand Business Number")
+    parser.add_argument("--ird-number", default="", help="IRD number")
     parser.add_argument("--gst-registered", action="store_true", help="Business is registered for GST")
     parser.add_argument("--gst-number", default="", help="GST/IRD number")
     parser.add_argument("--gst-registered-from", default=None, help="GST registration start date, YYYY-MM-DD")
@@ -128,16 +178,26 @@ def main():
     args = parser.parse_args()
 
     root = Path(args.root).expanduser().resolve()
+    operator_slug = slugify(args.operator_name, "operator")
+    client_name = args.client_name or (args.operator_name if args.operator_name != "Local User" else args.business_name)
+    client_slug = args.client_slug or slugify(client_name, "client")
     slug = args.slug or slugify(args.business_name)
+    entity_role = args.entity_role
+    if entity_role is None:
+        entity_role = "client_entity" if args.operator_role in {"accountant", "bookkeeper"} else "owned_entity"
     business_dir = root / "businesses" / slug
+    client_dir = root / "clients" / client_slug
     initial_period = args.period or period_from_date(date.today())
     initial_tax_year = args.tax_year or tax_year_from_date(date.today())
 
     created_dirs = []
-    for rel in ["shared/chart-of-accounts", "shared/templates"]:
+    for rel in ROOT_DIRS:
         path = root / rel
         path.mkdir(parents=True, exist_ok=True)
         created_dirs.append(str(path))
+
+    client_dir.mkdir(parents=True, exist_ok=True)
+    created_dirs.append(str(client_dir))
 
     for rel in BUSINESS_DIRS:
         path = business_dir / rel
@@ -158,11 +218,85 @@ def main():
     created_dirs.append(str(tax_year_dir))
 
     created_files = []
+    for rel, default in REGISTRY_FILES.items():
+        path = root / rel
+        if write_json_if_missing(path, default):
+            created_files.append(str(path))
+
+    client_config_path = client_dir / "client.json"
+    client_config = read_json(client_config_path, {})
+    client_config.update({
+        "schema_version": 2,
+        "client_slug": client_slug,
+        "client_name": client_name,
+        "operator_slug": operator_slug,
+        "operator_role": args.operator_role,
+    })
+    write_json(client_config_path, client_config)
+    created_files.append(str(client_config_path))
+
+    entity_links_path = client_dir / "entity-links.json"
+    entity_links = read_json(entity_links_path, {"entities": {}})
+    entity_links.setdefault("entities", {})[slug] = str(business_dir)
+    write_json(entity_links_path, entity_links)
+    created_files.append(str(entity_links_path))
+
+    touched_registry_files = [
+        update_registry_file(root, "registry/operators.json", operator_slug, {
+            "operator_slug": operator_slug,
+            "operator_name": args.operator_name,
+            "default_role": args.operator_role,
+        }),
+        update_registry_file(root, "registry/clients.json", client_slug, {
+            "client_slug": client_slug,
+            "client_name": client_name,
+            "operator_slug": operator_slug,
+            "operator_role": args.operator_role,
+            "client_dir": str(client_dir),
+        }),
+        update_registry_file(root, "registry/entities.json", slug, {
+            "entity_slug": slug,
+            "legal_name": args.business_name,
+            "trading_name": args.trading_name or args.business_name,
+            "entity_type": args.entity_type,
+            "entity_role": entity_role,
+            "client_slug": client_slug,
+            "operator_slug": operator_slug,
+            "business_dir": str(business_dir),
+            "nzbn": args.nzbn,
+            "ird_number": args.ird_number or args.gst_number,
+            "gst_number": args.gst_number,
+        }),
+        update_registry_file(root, "registry/assignments.json", f"{operator_slug}:{client_slug}:{slug}", {
+            "operator_slug": operator_slug,
+            "operator_role": args.operator_role,
+            "client_slug": client_slug,
+            "entity_slug": slug,
+            "entity_role": entity_role,
+        }),
+    ]
+    created_files.extend(str(path) for path in touched_registry_files)
+
     business_config_path = business_dir / "config.json"
     business_config = read_json(business_config_path, {})
     business_config.update({
         "schema_version": 2,
+        "business_slug": slug,
         "business_name": args.business_name,
+        "client_slug": client_slug,
+        "operator_slug": operator_slug,
+        "operator_role": args.operator_role,
+        "entity": {
+            "entity_slug": slug,
+            "legal_name": args.business_name,
+            "trading_name": args.trading_name or args.business_name,
+            "entity_type": args.entity_type,
+            "entity_role": entity_role,
+            "client_slug": client_slug,
+            "operator_slug": operator_slug,
+            "nzbn": args.nzbn,
+            "ird_number": args.ird_number or args.gst_number,
+        },
         "balance_date": args.balance_date,
         "tax_year_start_month": 4,
         "tax_year_start_day": 1,
@@ -221,10 +355,18 @@ def main():
     global_config_path = Path(args.global_config).expanduser().resolve()
     global_config = read_json(global_config_path, {})
     businesses = global_config.get("businesses") or {}
+    clients = global_config.get("clients") or {}
+    entities = global_config.get("entities") or {}
     businesses[slug] = str(business_dir)
+    clients[client_slug] = str(client_dir)
+    entities[slug] = str(business_dir)
     global_config.update({
         "books_root": str(root),
+        "active_client": client_slug,
+        "active_entity": slug,
         "active_business": slug,
+        "clients": clients,
+        "entities": entities,
         "businesses": businesses,
     })
     write_json(global_config_path, global_config)
@@ -232,8 +374,12 @@ def main():
 
     print(json.dumps({
         "books_root": str(root),
+        "active_client": client_slug,
+        "operator_slug": operator_slug,
         "active_business": slug,
+        "active_entity": slug,
         "business_dir": str(business_dir),
+        "client_dir": str(client_dir),
         "initial_period": initial_period,
         "initial_tax_year": initial_tax_year,
         "created_dirs": created_dirs,

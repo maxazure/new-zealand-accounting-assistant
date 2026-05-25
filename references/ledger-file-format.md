@@ -7,11 +7,40 @@ Use this reference whenever implementing storage, imports, reconciliation, repor
 - Do not store all bookkeeping records in one large JSON file.
 - Store monthly facts in monthly period folders.
 - Store annual tax/register data in tax-year folders.
-- Store reusable reference data globally for the business.
+- Store reusable reference data globally for the entity.
 - Treat generated summaries as rebuildable outputs, not the source of truth.
 - Preserve original source files separately from normalized ledger records.
+- Keep each legal/tax entity in a separate ledger folder. Use workspace registry files to group multiple entities for one owner, client, accountant, or bookkeeper.
 
-## Business Directory Layout
+## Workspace Registry Layout
+
+The bookkeeping root can contain many clients and many entities:
+
+```text
+{books_root}/
+├── registry/
+│   ├── operators.json
+│   ├── clients.json
+│   ├── entities.json
+│   └── assignments.json
+├── clients/
+│   └── {client-or-owner-slug}/
+│       ├── client.json
+│       └── entity-links.json
+└── businesses/
+    └── {entity-slug}/
+        └── ...
+```
+
+Definitions:
+
+- `operator`: the person or firm using the skill, such as an owner, director, accountant, or bookkeeper.
+- `client`: the customer or owner group. For an owner with several companies, this can be the person or holding group. For an accounting firm, this is the client.
+- `entity`: the legal/tax entity with its own ledger, such as a company, sole trader, partnership, trust, non-profit, or other entity.
+
+Registry files are JSON objects keyed by slug. They are routing and discovery metadata only. Accounting facts live under the entity's own `businesses/{entity-slug}/` folder.
+
+## Entity Directory Layout
 
 ```text
 {business_dir}/
@@ -51,11 +80,27 @@ Use this reference whenever implementing storage, imports, reconciliation, repor
 
 ## Config Fields
 
-`config.json` records business-level tax status and defaults:
+`config.json` records entity-level tax status and defaults:
 
 ```json
 {
+  "schema_version": 2,
+  "business_slug": "my-construction-ltd",
   "business_name": "My Construction Ltd",
+  "client_slug": "jay-owner-group",
+  "operator_slug": "jay-zhang",
+  "operator_role": "owner",
+  "entity": {
+    "entity_slug": "my-construction-ltd",
+    "legal_name": "My Construction Ltd",
+    "trading_name": "My Construction Ltd",
+    "entity_type": "company",
+    "entity_role": "owned_entity",
+    "client_slug": "jay-owner-group",
+    "operator_slug": "jay-zhang",
+    "nzbn": "",
+    "ird_number": ""
+  },
   "balance_date": "31-march",
   "tax_year_start_month": 4,
   "tax_year_start_day": 1,
@@ -278,4 +323,3 @@ Keep `ledger/registers/assets-master.json` as the long-lived asset register, and
 - New write operations must target period or tax-year files.
 - Reports can read a date range by loading only the required monthly folders.
 - If a month is locked, do not edit its files directly. Write corrections into a later period's `adjustments.json` unless the user explicitly unlocks the period.
-

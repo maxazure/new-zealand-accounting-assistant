@@ -1,6 +1,6 @@
 ---
 name: new-zealand-accounting-assistant
-description: "Free public, open-source New Zealand bookkeeping and tax-preparation assistant for small businesses and sole traders. Initialize a local KiwiBooks workspace, capture receipts, income, bank statements, and bookkeeping notes, reconcile bank lines with records, generate monthly finance summaries, IRD-ready GST/IR3 XLSX reports, and Xero standard or precoded bank statement CSV exports. This skill is not professional accounting or tax advice and must tell users to have a qualified New Zealand accountant review records and filings. Use when: (1) user sends a receipt, invoice, bank statement, or bookkeeping note, (2) user asks about GST, income tax, monthly accounts, reconciliation, or tax returns, (3) user wants to export receipts, generate reports, or create Xero imports, (4) user mentions New Zealand accounting, NZ accounting, IRD, GST, IR3, Xero, precoded CSV, provisional tax, depreciation, income, expense, or bank matching."
+description: "Free public, open-source New Zealand bookkeeping and tax-preparation assistant for small businesses and sole traders. Initialize a local KiwiBooks workspace for one operator with multiple clients and multiple legal/tax entities, capture receipts, income, bank statements, and bookkeeping notes, reconcile bank lines with records, generate monthly finance summaries, IRD-ready GST/IR3 XLSX reports, and Xero standard or precoded bank statement CSV exports. This skill is not professional accounting or tax advice and must tell users to have a qualified New Zealand accountant review records and filings. Use when: (1) user sends a receipt, invoice, bank statement, or bookkeeping note, (2) user asks about GST, income tax, monthly accounts, reconciliation, or tax returns, (3) user wants to export receipts, generate reports, or create Xero imports, (4) user mentions New Zealand accounting, NZ accounting, IRD, GST, IR3, Xero, precoded CSV, provisional tax, depreciation, income, expense, bank matching, multiple companies, clients, or accounting firm workflows."
 metadata:
   {
     "openclaw":
@@ -21,7 +21,7 @@ Public-service disclaimer: this skill is not for sale, is intended to remain fre
 
 ## Core Rule
 
-Do not start bookkeeping work until the workspace readiness check has passed. The first useful reply after setup must explain the workflow in plain language: collect income, expenses, and bank statements; match them together; review uncertain matches; then generate monthly summaries, IRD figures, and Xero import files. The first setup reply and every report/export reply must include a concise disclaimer that this is record preparation, not professional accounting or tax advice.
+Do not start bookkeeping work until the workspace readiness check has passed and the active legal/tax entity is known. If the workspace has more than one entity, confirm which company/client/entity the next source file or command belongs to before saving, importing, reconciling, or reporting. The first useful reply after setup must explain the workflow in plain language: collect income, expenses, and bank statements for the selected entity; match them together; review uncertain matches; then generate monthly summaries, IRD figures, and Xero import files. The first setup reply and every report/export reply must include a concise disclaimer that this is record preparation, not professional accounting or tax advice.
 
 When changing or relying on ledger storage, read `references/ledger-file-format.md` first.
 When changing or relying on Xero import behavior, IRD filing behavior, or New Zealand record-keeping rules, read `references/xero-import-and-ird-filing.md` first.
@@ -44,11 +44,20 @@ Expected root structure:
 
 ```text
 ~/KiwiBooks/
+├── registry/
+│   ├── operators.json
+│   ├── clients.json
+│   ├── entities.json
+│   └── assignments.json
+├── clients/
+│   └── {client-or-owner-slug}/
+│       ├── client.json
+│       └── entity-links.json
 ├── shared/
 │   ├── chart-of-accounts/
 │   └── templates/
 └── businesses/
-    └── {business-slug}/
+    └── {entity-slug}/
         ├── config.json
         ├── inbox/
         │   ├── receipts/
@@ -98,6 +107,16 @@ Expected root structure:
 
 Run this check when the user says "setup" or before any command that reads or writes bookkeeping data.
 
+### Identity and entity model
+
+Model the workspace around three concepts:
+
+- `operator`: the person using the skill. They may be an owner/director doing their own books, or an accountant/bookkeeper working for multiple clients.
+- `client`: the customer or owner group. For a business owner with several companies, this can be the person or holding group. For an accounting firm, this is the firm's client.
+- `entity`: the actual legal/tax entity being reconciled and reported, such as a company, sole trader, partnership, trust, non-profit, or other entity.
+
+Each entity must have its own folder under `businesses/{entity-slug}/`. Do not mix receipts, bank statements, ledgers, Xero mappings, or reports across entities. Use the root-level registry files to group many entities under the same operator/client without duplicating ledger files.
+
 ### 1. Discover or create the root
 
 1. Read `~/.openclaw/data/kiwi-receipts/config.json` if it exists.
@@ -109,35 +128,61 @@ Run this check when the user says "setup" or before any command that reads or wr
 ```json
 {
   "books_root": "/Users/example/KiwiBooks",
+  "active_client": "jay-owner-group",
+  "active_entity": "my-construction-ltd",
   "active_business": "my-construction-ltd",
+  "clients": {
+    "jay-owner-group": "/Users/example/KiwiBooks/clients/jay-owner-group"
+  },
+  "entities": {
+    "my-construction-ltd": "/Users/example/KiwiBooks/businesses/my-construction-ltd"
+  },
   "businesses": {
     "my-construction-ltd": "/Users/example/KiwiBooks/businesses/my-construction-ltd"
   }
 }
 ```
 
-### 2. Select or create a business folder
+### 2. Select or create a client and entity folder
 
 Ask only for missing details:
 
-1. Ask for business name
-2. Ask for GST/IRD number if registered or known
-3. Ask for balance date (default `31-march`)
-4. Ask whether the business is GST registered. If not registered, set `gst_registered: false`, leave `gst_number` blank, and set GST filing fields to `null`.
-5. If GST registered, ask for GST number, registration start date, filing frequency, and accounting basis.
-6. Ask for vehicle business use % when vehicle expenses are expected (default 80)
-7. Ask for phone business use % when phone expenses are expected (default 70)
+1. Ask who the operator is and their role: owner, director, accountant, bookkeeper, or administrator.
+2. Ask whether the work is for the operator's own entity, one of several entities they control, or an accounting/bookkeeping client.
+3. Ask for the client or owner group name. For a sole owner with several companies, this can be the person's name or holding group. For an accounting firm, this is the client name.
+4. Ask for the entity legal name, trading name if different, entity type, NZBN if known, and IRD/GST number if registered or known.
+5. Ask for balance date (default `31-march`).
+6. Ask whether the entity is GST registered. If not registered, set `gst_registered: false`, leave `gst_number` blank, and set GST filing fields to `null`.
+7. If GST registered, ask for GST number, registration start date, filing frequency, and accounting basis.
+8. Ask for vehicle business use % when vehicle expenses are expected (default 80).
+9. Ask for phone business use % when phone expenses are expected (default 70).
 
-Create `~/KiwiBooks/businesses/{business-slug}/` and the expected subdirectories. Do not delete unknown files or folders. If a directory already exists, validate it and create only missing expected directories/files.
+Create `~/KiwiBooks/clients/{client-slug}/`, `~/KiwiBooks/businesses/{entity-slug}/`, and the expected subdirectories. Do not delete unknown files or folders. If a directory already exists, validate it and create only missing expected directories/files.
 
 Use the bundled initializer when running in an environment where scripts can be executed:
 
 ```bash
 python3 {baseDir}/scripts/init_workspace.py \
   --root "$BOOKS_ROOT" \
+  --operator-name "Jay Zhang" \
+  --operator-role owner \
+  --client-name "Jay Zhang Owner Group" \
   --business-name "My Construction Ltd" \
+  --entity-type company \
   --vehicle-business-percent 80 \
   --phone-business-percent 70
+```
+
+For an accounting firm client:
+
+```bash
+python3 {baseDir}/scripts/init_workspace.py \
+  --root "$BOOKS_ROOT" \
+  --operator-name "ABC Accounting Ltd" \
+  --operator-role accountant \
+  --client-name "My Construction Group" \
+  --business-name "My Construction Ltd" \
+  --entity-type company
 ```
 
 Save business config to `{business_dir}/config.json`:
@@ -145,7 +190,22 @@ Save business config to `{business_dir}/config.json`:
 ```json
 {
   "schema_version": 2,
+  "business_slug": "my-construction-ltd",
   "business_name": "My Construction Ltd",
+  "client_slug": "jay-owner-group",
+  "operator_slug": "jay-zhang",
+  "operator_role": "owner",
+  "entity": {
+    "entity_slug": "my-construction-ltd",
+    "legal_name": "My Construction Ltd",
+    "trading_name": "My Construction Ltd",
+    "entity_type": "company",
+    "entity_role": "owned_entity",
+    "client_slug": "jay-owner-group",
+    "operator_slug": "jay-zhang",
+    "nzbn": "",
+    "ird_number": ""
+  },
   "balance_date": "31-march",
   "gst_registered": false,
   "gst_number": "",
@@ -198,8 +258,8 @@ After setup is ready, explain:
 
 ```text
 New Zealand Accounting Assistant works in four steps:
-1. Collect source records: receipts, income/invoices, bank statements, and notes.
-2. Normalize them into a local ledger under your business folder.
+1. Select the correct client/entity, then collect source records: receipts, income/invoices, bank statements, and notes.
+2. Normalize them into that entity's local ledger folder.
 3. Match bank statement lines to receipts and income by date, amount, merchant/client, and references.
 4. Generate outputs: monthly finance summary, IRD GST/IR3 workbooks, and Xero bank statement CSVs. For Xero precoded CSVs, we need your Xero account-code and tax-rate mapping first.
 ```
@@ -349,10 +409,19 @@ Always distinguish bank totals from source-record totals when they differ.
 
 ## Handling Text Commands
 
-Before any command that reads/writes data, resolve `{business_dir}` from the global pointer config and active business. If no active business exists, run First-Time Setup.
+Before any command that reads/writes data, resolve `{business_dir}` from the global pointer config and active entity. If no active entity exists, run First-Time Setup. If multiple entities exist and the user's command or source file does not clearly identify the intended entity, ask the user to choose before writing anything.
 
 ### "setup"
-Run the workspace readiness check, create/validate the business directory, initialize missing ledger/mapping files, and explain the workflow.
+Run the workspace readiness check, create/validate the client and entity directories, initialize missing ledger/mapping files, and explain the workflow.
+
+### "clients"
+Read `registry/clients.json` and show known clients or owner groups with their linked entities. Do not show unrelated personal identifiers unless needed to distinguish similarly named clients.
+
+### "entities"
+Read `registry/entities.json` and show known legal/tax entities with client, entity type, GST registration status when available, and the active marker.
+
+### "use <entity>"
+Match by entity slug, legal name, or trading name. Set `active_entity`, compatibility `active_business`, and `active_client` in the global pointer config. Confirm the selected entity before the next write.
 
 ### "summary"
 Read the relevant `ledger/periods/YYYY-MM/` folders for the current GST/monthly period and show both source-record and bank-matched totals:
@@ -435,6 +504,9 @@ New Zealand Accounting Assistant -- Commands:
 
 SETUP:
   "setup"                    Configure or validate bookkeeping workspace
+  "clients"                  List clients or owner groups
+  "entities"                 List legal/tax entities
+  "use <entity>"             Set the active entity before capture/import/report
   "help"                     This message
 
 RECEIPTS:
